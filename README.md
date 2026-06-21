@@ -2,6 +2,8 @@
 
 [![CI](https://github.com/frdrckj/crossbook/actions/workflows/ci.yml/badge.svg)](https://github.com/frdrckj/crossbook/actions/workflows/ci.yml)
 
+![Crossbook architecture](docs/architecture.png)
+
 Crossbook is a noncustodial hybrid decentralized exchange. Traders sign orders offchain as gasless intents, a Rust matching engine crosses them, and an onchain settlement contract checks the signatures and swaps the tokens in one atomic transaction.
 
 Funds stay in the trader's wallet until the moment of execution. A maker grants the settlement contract an ERC-20 allowance once, and the contract pulls tokens only when it settles, after it has independently checked every signature, nonce, expiry, and limit price onchain.

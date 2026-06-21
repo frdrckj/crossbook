@@ -21,3 +21,5 @@ crossbook rough*.md
 # Local screenshot and tooling artifacts
 .playwright-mcp/
 *.png
+# except the committed architecture diagram
+!docs/architecture.png

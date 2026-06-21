@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+    <style>
+      :root {
+        --paper: #efefe9; --card: #f7f7f2; --chain: #e7eae5; --ink: #1a1b18;
+        --muted: #6e6f66; --rule: #cfcfc4; --give: #8c3a2b; --recv: #1c6b4b;
+        --disp: "Archivo", sans-serif; --mono: "IBM Plex Mono", monospace;
+      }
+      * { box-sizing: border-box; margin: 0; }
+      body { background: #d9d9d2; display: flex; justify-content: center; padding: 24px; font-family: var(--mono); }
+      .frame { width: 1280px; height: 600px; background: var(--paper); padding: 40px 46px; color: var(--ink); display: flex; flex-direction: column; }
+
+      .top { display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 2px solid var(--ink); padding-bottom: 14px; }
+      .logo { font-family: var(--disp); font-weight: 700; font-size: 40px; letter-spacing: -0.02em; }
+      .logo .x { color: var(--give); }
+      .top .sub { color: var(--muted); font-size: 14px; padding-bottom: 4px; }
+
+      .row { display: flex; align-items: stretch; margin-top: 34px; }
+      .card { flex: 1; background: var(--card); border: 1.5px solid var(--ink); padding: 13px 15px; display: flex; flex-direction: column; }
+      .card.chain { background: var(--chain); }
+      .card .h { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 10px; }
+      .card .h b { font-family: var(--disp); font-weight: 600; font-size: 16px; }
+      .card .h .where { font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+      .card.chain .h .where { color: var(--give); }
+      .line { font-size: 12.5px; line-height: 1.85; color: var(--ink); }
+      .line .k { color: var(--muted); }
+      .line.dim { color: var(--muted); }
+      .line.g { color: var(--recv); }
+
+      .conn { width: 50px; display: flex; flex-direction: column; align-items: center; justify-content: center; flex: 0 0 50px; }
+      .conn .lab { font-size: 10px; color: var(--muted); margin-bottom: 5px; text-align: center; line-height: 1.2; }
+      .conn .arr { font-size: 18px; color: var(--ink); line-height: 1; }
+      .conn.bound .arr { color: var(--give); }
+
+      .flow { display: flex; align-items: center; gap: 10px; margin-top: 16px; padding: 11px 15px; border: 1px dashed var(--rule); font-size: 13px; color: var(--ink); }
+      .flow .give { color: var(--give); font-weight: 500; }
+      .flow .recv { color: var(--recv); font-weight: 500; }
+      .flow .sep { color: var(--rule); }
+
+      .callout { margin-top: 16px; border-left: 3px solid var(--ink); padding: 4px 0 4px 15px; }
+      .callout b { font-family: var(--disp); font-weight: 600; font-size: 13px; }
+      .callout p { font-size: 13px; color: var(--muted); margin-top: 3px; max-width: 1000px; }
+
+      .foot { margin-top: auto; display: flex; justify-content: space-between; padding-top: 14px; border-top: 1px solid var(--rule); font-size: 12px; color: var(--muted); }
+    </style>
+  </head>
+  <body>
+    <div class="frame">
+      <div class="top">
+        <div class="logo">cross<span class="x">book</span></div>
+        <div class="sub">architecture &mdash; a signed order becomes an atomic on chain settlement</div>
+      </div>
+
+      <div class="row">
+        <div class="card">
+          <div class="h"><b>Trader wallet</b><span class="where">off chain</span></div>
+          <div class="line"><span class="k">signs</span> an EIP-712</div>
+          <div class="line">order: sell A,</div>
+          <div class="line">buy B, validTo,</div>
+          <div class="line">nonce</div>
+          <div class="line g">approves once</div>
+          <div class="line dim">no gas</div>
+        </div>
+
+        <div class="conn"><div class="lab">POST<br />/orders</div><div class="arr">&rarr;</div></div>
+
+        <div class="card">
+          <div class="h"><b>Engine</b><span class="where">Rust</span></div>
+          <div class="line"><span class="k">ingest:</span> recover</div>
+          <div class="line">sig, expiry,</div>
+          <div class="line">balance, allowance</div>
+          <div class="line"><span class="k">match:</span> price then</div>
+          <div class="line">time, one writer</div>
+          <div class="line"><span class="k">settle:</span> build batch</div>
+        </div>
+
+        <div class="conn bound"><div class="lab">settle()<br />tx</div><div class="arr">&rarr;</div></div>
+
+        <div class="card chain">
+          <div class="h"><b>Settlement</b><span class="where">on chain</span></div>
+          <div class="line">recover == maker</div>
+          <div class="line">now &le; validTo</div>
+          <div class="line">filled + &Delta; &le; sell</div>
+          <div class="line">buy&middot;sell &ge; sell&middot;buy</div>
+          <div class="line">netFlow == 0</div>
+          <div class="line"><span class="k">swap,</span> emit Trade</div>
+        </div>
+
+        <div class="conn"><div class="lab">Trade<br />events</div><div class="arr">&rarr;</div></div>
+
+        <div class="card">
+          <div class="h"><b>Indexer</b><span class="where">sqlx</span></div>
+          <div class="line"><span class="k">read</span> Trade logs</div>
+          <div class="line"><span class="k">write</span> orders,</div>
+          <div class="line">trades to Postgres</div>
+          <div class="line">cursor + reorg</div>
+          <div class="line">guard</div>
+        </div>
+
+        <div class="conn"><div class="lab">live</div><div class="arr">&rarr;</div></div>
+
+        <div class="card">
+          <div class="h"><b>API</b><span class="where">axum</span></div>
+          <div class="line">REST +</div>
+          <div class="line">WebSocket</div>
+          <div class="line dim">order book,</div>
+          <div class="line dim">trade feed</div>
+          <div class="line"><span class="k">clients:</span> web, CLI</div>
+        </div>
+      </div>
+
+      <div class="flow">
+        <span>At settlement the contract pulls each maker's <span class="give">sell token</span> and sends their <span class="recv">buy token</span> in one transaction</span>
+        <span class="sep">|</span>
+        <span>amounts net to zero, so the contract never holds inventory</span>
+      </div>
+
+      <div class="callout">
+        <b>Trust boundary</b>
+        <p>The settlement contract does not trust the engine. It re-verifies every signature, expiry, fill, and limit price on chain, so a buggy or malicious matcher can never move funds against a maker's signed limit.</p>
+      </div>
+
+      <div class="foot">
+        <span>property tests &middot; EIP-712 parity gate &middot; Foundry fuzz + invariant &middot; PoC threat model &middot; end to end on Anvil + Postgres</span>
+        <span>github.com/frdrckj/crossbook</span>
+      </div>
+    </div>
+  </body>
+</html>
