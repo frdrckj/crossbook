@@ -1,25 +1,130 @@
 # Threat model
 
-This is a stub. It is finished at M3 and M5. Treat it as a real deliverable, since the security writeup is the strongest part of this portfolio for a security focused DeFi team.
+The settlement contract is the trust backstop, not the engine. The engine is a
+convenience: it matches orders and submits batches, but it cannot move funds
+against a maker's signed limits, because the contract rechecks everything on
+chain. Each threat below names the mitigation and the test that demonstrates it,
+so the claims are backed by code rather than prose.
 
-The plan is to make every entry concrete. For each threat, write a Foundry test against a deliberately broken variant that fails, then show the fixed contract passing.
+Contract tests live in `contracts/test/Settlement.t.sol` and
+`contracts/test/Settlement.invariant.t.sol`. Engine and matcher tests live under
+`crates/`.
 
-Threats to cover, with their mitigations:
+## Forged or wrong signature
 
-Signature replay. The nonce field, the `validTo` expiry, and the cumulative `filledSell` accounting prevent it. Fill state is updated before transfers (checks, effects, interactions).
+A batch can only move a maker's funds if the order recovers to that maker. The
+contract recomputes the EIP-712 digest and uses OpenZeppelin `ECDSA.recover`,
+requiring the recovered address to equal `order.maker`.
 
-Cross domain replay. An order signed for one chain id or verifying contract must revert on another.
+- `Settlement.t.sol::test_RevertWhen_BadSignature`
+- `ingest::tests::tampered_signature_is_rejected`
+- `ingest::tests::signature_by_another_key_is_rejected`
 
-Signature malleability. OpenZeppelin `ECDSA` rejects high `s` values and the zero address. The engine applies the same rule, so it never admits an order the contract will reject.
+The Rust and Solidity digests are proven byte identical by the parity gate
+(`crates/crossbook-core/tests/eip712_parity.rs` and
+`contracts/test/Eip712Parity.t.sol`), so an order the engine admits is the same
+order the contract verifies.
 
-Self trade and wash trading. Documented policy plus a test.
+## Signature malleability
 
-Approval front running and griefing. A maker who calls `approve(0)` after admission should not be able to wedge the whole batch. The solver re-simulates against current chain state right before submission, and submits through a private path.
+OpenZeppelin `ECDSA.recover` rejects high `s` values and the zero address, so a
+malleated signature does not recover to a different valid signer. The engine
+applies the same acceptance rule, so it never admits an order the contract would
+reject.
 
-MEV and front running of the public settle transaction. Acknowledged. Private mempools and batch privacy are the mitigations.
+## Expiry
 
-Malicious or buggy solver. Bounded trust. The contract rechecks signatures, expiry, the fill bound, and the limit price, and requires net zero inventory. A leaked solver key is handled with a pause switch and a solver rotation function.
+Every order carries `validTo`. The contract requires `block.timestamp <= validTo`.
 
-Reentrancy. A reentrancy guard plus the checks, effects, interactions order. Include a proof of concept that double spends with the order reversed, then the guarded version passing.
+- `Settlement.t.sol::test_RevertWhen_Expired`
+- `ingest::tests::static_checks_catch_expiry_and_degenerate_orders`
 
-Stale allowance and nonstandard tokens. Validate at intake, revert safely at settlement, and restrict the venue to standard ERC-20 tokens.
+## Replay and overfill
+
+Fill state is cumulative, keyed by the order hash (`filledSell[orderHash]`, the
+CoW filledAmount pattern), and updated before any transfer (checks, effects,
+interactions). A fully filled order cannot fill again, a partially filled order
+cannot exceed its `sellAmount`, and a fill or kill order fills exactly once.
+
+- `Settlement.t.sol::test_RevertWhen_Overfill`
+- `Settlement.t.sol::test_PartialFillAccumulates`
+- `Settlement.t.sol::test_RevertWhen_PartialOnFillOrKill`
+- the invariant suite asserts cumulative fills never exceed `sellAmount`
+
+A maker can also invalidate an order with `cancel`, after which it cannot settle.
+
+- `Settlement.t.sol::test_RevertWhen_OrderCancelled`
+
+## A solver moving funds against a maker's limit
+
+This is the central risk and the reason the contract exists. For every fill the
+contract requires `buyFilled * sellAmount >= sellFilled * buyAmount`, cross
+multiplied and widened to 512 bits so it cannot overflow or spuriously revert on
+extreme amounts. A fill one wei below the maker's limit reverts the whole batch.
+
+- `Settlement.t.sol::test_RevertWhen_BelowLimitPrice`
+- the fuzz test asserts the realized price respects the limit across random amounts
+- the matcher upholds the same limit cumulatively, with rounding in the maker's
+  favor (`crates/crossbook-core/tests/invariants.rs`)
+
+## The contract holding or stealing inventory
+
+The contract is non custodial. It tracks net flow per token during a settlement
+and requires every touched token to net to zero, so it receives exactly what it
+sends and never keeps a balance.
+
+- `Settlement.t.sol::test_RevertWhen_InventoryNotZero`
+- `Settlement.invariant.t.sol::invariant_SettlementHoldsNoInventory` (zero balance
+  held across 8192 random settlements)
+
+## Reentrancy
+
+`settle` is `nonReentrant` and follows checks, effects, interactions. A malicious
+token that tries to reenter during the transfer phase causes the whole batch to
+revert.
+
+- `Settlement.t.sol::test_ReentrancyIsBlocked`
+
+## Fee on transfer and nonstandard tokens
+
+The venue targets standard ERC-20 tokens. A fee on transfer token delivers less
+than stated, which breaks the net zero requirement and reverts the batch cleanly
+rather than leaving the contract short.
+
+- `Settlement.t.sol::test_RevertWhen_FeeOnTransferToken`
+
+## Solver key compromise
+
+The solver is a single permissioned address in the MVP, which is a centralization
+point stated honestly. The owner can rotate the solver and can pause settlement
+to respond to a key compromise. Maker funds at risk are bounded by their
+outstanding allowance, since the contract only ever pulls up to what was approved.
+
+- `Settlement.t.sol::test_SetSolverRotatesAccess`
+- `Settlement.t.sol::test_RevertWhen_Paused`
+- `Settlement.t.sol::test_RevertWhen_SetSolverByNonOwner`
+
+## What the solver can and cannot do
+
+Can: pick the execution price within each maker's limit, capture the spread,
+choose which orders to include, and choose ordering. Cannot: forge signatures,
+exceed `validTo`, replay or overfill, settle below a maker's limit, or strand the
+contract with inventory. The contract enforces every item in the second list.
+
+## Acknowledged, not yet fully mitigated
+
+- **MEV and front running of the public settle transaction.** The settle call is
+  public on chain and can be observed. Production mitigations are private mempools
+  or bundle submission and batch privacy.
+- **Intake versus settlement timing.** Off chain intake validation (balance and
+  allowance) is a best effort admission hint, separate in time from the on chain
+  pull. Wholesale revert keeps funds safe, but a maker who revokes an allowance
+  after admission can make a batch revert. The intended mitigation is for the
+  solver to re simulate the batch against current chain state immediately before
+  submission and to drop or rematch orders that no longer validate.
+- **Cross domain replay.** The digest binds the chain id and the verifying
+  contract, so an order signed for one deployment does not recover on another. A
+  dedicated negative test for this is a worthwhile addition.
+- **Reorgs.** The indexer stores the last block hash so a reorg can be detected.
+  Rollback is left for production, since the MVP targets a local Anvil that does
+  not reorg.
