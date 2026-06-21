@@ -700,7 +700,10 @@ dependencies = [
 name = "crossbook-engine"
 version = "0.1.0"
 dependencies = [
+ "alloy-primitives",
  "anyhow",
+ "crossbook-core",
+ "thiserror",
  "tokio",
 ]
 
