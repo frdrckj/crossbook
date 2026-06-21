@@ -1,0 +1,9 @@
+[package]
+name = "crossbook-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Client: approve, create/sign EIP-712 orders, submit, and query."
+
+[dependencies]
+anyhow.workspace = true

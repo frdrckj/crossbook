@@ -1,0 +1,27 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/crossbook-core",
+    "crates/crossbook-engine",
+    "crates/crossbook-cli",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/frdrckj/crossbook"
+rust-version = "1.85"
+
+# Shared, version-pinned dependencies. Crates opt in with `dep.workspace = true`.
+# Added per-milestone as they are actually needed (M1+); empty deps stay out.
+[workspace.dependencies]
+anyhow = "1"
+thiserror = "2"
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1

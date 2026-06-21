@@ -1,0 +1,19 @@
+# Rust
+/target
+**/target
+
+# Foundry
+contracts/out/
+contracts/cache/
+contracts/broadcast/
+
+# Secrets / local env
+.env
+.env.*
+!.env.example
+
+# OS / editor
+.DS_Store
+
+# The internal build spec (+ any backups/versions) — never publish.
+crossbook rough*.md

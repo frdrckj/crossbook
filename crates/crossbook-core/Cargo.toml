@@ -1,0 +1,9 @@
+[package]
+name = "crossbook-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Pure, deterministic order book and price-time-priority matching engine."
+
+[dependencies]
+# M0: none. M1 adds alloy-primitives (Address/U256) + thiserror. Kept pure: no async, no I/O.

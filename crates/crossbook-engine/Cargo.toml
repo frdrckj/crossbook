@@ -1,0 +1,10 @@
+[package]
+name = "crossbook-engine"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Tokio service: order intake, single-writer matching, settlement, indexer, REST/WS API."
+
+[dependencies]
+anyhow.workspace = true
+tokio.workspace = true

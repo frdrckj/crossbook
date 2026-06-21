@@ -1,0 +1,26 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: crossbook
+      POSTGRES_PASSWORD: crossbook
+      POSTGRES_DB: crossbook
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U crossbook"]
+      interval: 2s
+      timeout: 5s
+      retries: 15
+
+  anvil:
+    image: ghcr.io/foundry-rs/foundry:latest
+    # ponytail: foundry image runs args via its entrypoint as a single string.
+    command: ["anvil --host 0.0.0.0 --chain-id 31337"]
+    ports:
+      - "8545:8545"
+
+volumes:
+  pgdata:
