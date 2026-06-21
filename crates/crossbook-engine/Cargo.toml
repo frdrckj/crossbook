@@ -10,7 +10,20 @@ anyhow.workspace = true
 tokio.workspace = true
 thiserror.workspace = true
 crossbook-core = { path = "../crossbook-core" }
-alloy-primitives = "1.6.0"
+alloy-primitives = { version = "1.6.0", features = ["serde", "k256"] }
+alloy-sol-types = "1.6.0"
+serde = { workspace = true }
+serde_json = { workspace = true }
+alloy = { version = "1", default-features = false, features = [
+    "std",
+    "provider-http",
+    "signer-local",
+    "network",
+    "contract",
+    "sol-types",
+    "rpc-types-eth",
+    "reqwest-rustls-tls",
+] }
 sqlx = { version = "0.8", default-features = false, features = [
     "runtime-tokio",
     "tls-rustls",
