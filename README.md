@@ -59,7 +59,3 @@ The matcher is covered by property tests for its invariants (no crossed book, co
 ## Security
 
 The settlement contract is the trust backstop, not the engine. It verifies each order onchain, enforces every maker's limit price with overflow safe arithmetic, tracks cumulative fills to prevent replay and overfill, and requires each settlement to net to zero so the contract never custodies funds. See [docs/threat-model.md](docs/threat-model.md).
-
-## License
-
-MIT.
