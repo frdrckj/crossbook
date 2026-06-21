@@ -33,3 +33,18 @@ sqlx = { version = "0.8", default-features = false, features = [
     "bigdecimal",
     "chrono",
 ] }
+axum = { version = "0.8.9", features = ["ws"] }
+tower-http = { version = "0.7.0", features = ["trace"] }
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
+metrics = "0.24.6"
+metrics-exporter-prometheus = "0.18.3"
+futures-util = "0.3.32"
+
+[features]
+# Gates the end to end test, which reads compiled contract artifacts. Enable it
+# after `forge build` (see `just e2e`).
+e2e = []
+
+[dev-dependencies]
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }

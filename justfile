@@ -34,6 +34,9 @@ dev:
 deploy-local:
     cd contracts && forge script script/Deploy.s.sol --rpc-url $RPC_URL --broadcast
 
-# Full end to end flow against Anvil (runs at M5).
+# Full end to end flow: brings up Postgres and Anvil, then runs the db and e2e tests.
 e2e:
-    @echo "e2e: implemented at M5"
+    docker compose up -d
+    sleep 4
+    cd contracts && forge build
+    DATABASE_URL=postgres://crossbook:crossbook@localhost:5432/crossbook RPC_URL=http://localhost:8545 cargo test -p crossbook-engine --features e2e --test e2e --test db -- --nocapture

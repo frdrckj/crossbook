@@ -91,6 +91,17 @@ impl Chain {
             .context("get block number")
     }
 
+    /// Timestamp (unix seconds) and hash of a block by number.
+    pub async fn block_info(&self, number: u64) -> Result<(u64, B256)> {
+        let block = self
+            .provider
+            .get_block_by_number(alloy::eips::BlockNumberOrTag::Number(number))
+            .await
+            .context("get block")?
+            .context("block not found")?;
+        Ok((block.header.timestamp, block.header.hash))
+    }
+
     pub async fn balance_of(&self, token: Address, owner: Address) -> Result<U256> {
         let erc20 = Erc20::new(token, &self.provider);
         erc20.balanceOf(owner).call().await.context("balanceOf")

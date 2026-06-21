@@ -37,3 +37,38 @@ jobs:
       - uses: foundry-rs/foundry-toolchain@v1
       - run: forge fmt --check
       - run: forge test -vvv
+
+  integration:
+    runs-on: ubuntu-latest
+    env:
+      SQLX_OFFLINE: "true"
+      DATABASE_URL: postgres://crossbook:crossbook@localhost:5432/crossbook
+      RPC_URL: http://localhost:8545
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: crossbook
+          POSTGRES_PASSWORD: crossbook
+          POSTGRES_DB: crossbook
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U crossbook"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: foundry-rs/foundry-toolchain@v1
+      - run: forge build
+        working-directory: contracts
+      - name: run db and e2e tests against live services
+        run: |
+          anvil --silent --chain-id 31337 &
+          sleep 3
+          cargo test -p crossbook-engine --features e2e --test db --test e2e
