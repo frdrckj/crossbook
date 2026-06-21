@@ -12,6 +12,9 @@ concurrency:
 jobs:
   rust:
     runs-on: ubuntu-latest
+    env:
+      # Build against committed query metadata in .sqlx, no database needed.
+      SQLX_OFFLINE: "true"
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable

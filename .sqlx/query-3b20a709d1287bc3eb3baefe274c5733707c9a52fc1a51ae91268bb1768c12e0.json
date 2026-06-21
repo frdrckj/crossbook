@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO trades (tx_hash, log_index, maker, sell_token, buy_token, sell_filled, buy_filled, order_hash, block_number, block_time) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) ON CONFLICT (tx_hash, log_index) DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Int4",
+        "Bytea",
+        "Bytea",
+        "Bytea",
+        "Numeric",
+        "Numeric",
+        "Bytea",
+        "Int8",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "3b20a709d1287bc3eb3baefe274c5733707c9a52fc1a51ae91268bb1768c12e0"
+}

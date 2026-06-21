@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO indexer_cursor (id, last_block, last_block_hash) VALUES (1, $1, $2) ON CONFLICT (id) DO UPDATE SET last_block = $1, last_block_hash = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "6debe93f3dc6bbc7adc24a3ff90540401d70b42d5dd5915277bb7469a0899d78"
+}

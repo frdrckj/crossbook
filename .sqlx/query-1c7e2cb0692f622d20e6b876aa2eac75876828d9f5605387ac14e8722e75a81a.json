@@ -1,0 +1,78 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT tx_hash, log_index, maker, sell_token, buy_token, sell_filled, buy_filled, order_hash, block_number, block_time FROM trades WHERE sell_token = $1 AND buy_token = $2 ORDER BY block_number DESC LIMIT $3",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "tx_hash",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 1,
+        "name": "log_index",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 2,
+        "name": "maker",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 3,
+        "name": "sell_token",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 4,
+        "name": "buy_token",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 5,
+        "name": "sell_filled",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 6,
+        "name": "buy_filled",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 7,
+        "name": "order_hash",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 8,
+        "name": "block_number",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 9,
+        "name": "block_time",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Bytea",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "1c7e2cb0692f622d20e6b876aa2eac75876828d9f5605387ac14e8722e75a81a"
+}

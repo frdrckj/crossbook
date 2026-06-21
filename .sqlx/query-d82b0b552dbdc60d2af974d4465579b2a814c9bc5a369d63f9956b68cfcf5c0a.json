@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO orders (hash, maker, sell_token, buy_token, sell_amount, buy_amount, valid_to, nonce, status) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) ON CONFLICT (hash) DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Bytea",
+        "Bytea",
+        "Bytea",
+        "Numeric",
+        "Numeric",
+        "Int8",
+        "Numeric",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d82b0b552dbdc60d2af974d4465579b2a814c9bc5a369d63f9956b68cfcf5c0a"
+}

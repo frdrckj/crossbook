@@ -1,0 +1,70 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT hash, maker, sell_token, buy_token, sell_amount, buy_amount, valid_to, nonce, status FROM orders WHERE hash = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "hash",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 1,
+        "name": "maker",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 2,
+        "name": "sell_token",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 3,
+        "name": "buy_token",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 4,
+        "name": "sell_amount",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 5,
+        "name": "buy_amount",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 6,
+        "name": "valid_to",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 7,
+        "name": "nonce",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 8,
+        "name": "status",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bytea"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "073d18039a18b15c09ac7769f206af6b513bdbc14d440fda9209280413be2c00"
+}
