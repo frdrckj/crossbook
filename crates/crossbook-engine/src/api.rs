@@ -10,7 +10,7 @@ use alloy_sol_types::Eip712Domain;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
-use axum::response::{IntoResponse, Response};
+use axum::response::{Html, IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use crossbook_core::types::{OrderHash, SubmitOutcome};
@@ -25,6 +25,15 @@ use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::broadcast;
 
+/// What the demo dashboard needs to build EIP-712 orders.
+#[derive(Clone, Serialize)]
+pub struct DemoConfig {
+    pub chain_id: u64,
+    pub settlement: String,
+    pub token_a: Option<String>,
+    pub token_b: Option<String>,
+}
+
 /// Shared engine state. Cheap to clone (everything inside is shared).
 #[derive(Clone)]
 pub struct AppState {
@@ -36,10 +45,13 @@ pub struct AppState {
     pub seq: Arc<AtomicU64>,
     pub trades_tx: broadcast::Sender<TradeRow>,
     pub metrics: Arc<PrometheusHandle>,
+    pub demo: DemoConfig,
 }
 
 pub fn router(state: AppState) -> Router {
     Router::new()
+        .route("/", get(index))
+        .route("/config", get(config))
         .route("/health", get(health))
         .route("/metrics", get(metrics))
         .route("/orders", post(post_order))
@@ -48,6 +60,14 @@ pub fn router(state: AppState) -> Router {
         .route("/trades", get(get_trades))
         .route("/ws", get(ws_handler))
         .with_state(state)
+}
+
+async fn index() -> Html<&'static str> {
+    Html(include_str!("../static/index.html"))
+}
+
+async fn config(State(st): State<AppState>) -> Json<DemoConfig> {
+    Json(st.demo.clone())
 }
 
 async fn health() -> &'static str {

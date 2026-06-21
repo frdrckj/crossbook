@@ -31,6 +31,10 @@ bench:
 dev:
     docker compose up -d
 
+# One command demo: deploy, run the engine, and open the dashboard at :8080.
+demo:
+    bash scripts/demo.sh
+
 deploy-local:
     cd contracts && forge script script/Deploy.s.sol --rpc-url $RPC_URL --broadcast
 

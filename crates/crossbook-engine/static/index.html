@@ -1,0 +1,329 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Crossbook</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --paper: #efefe9;
+        --card: #f6f6f1;
+        --ink: #1a1b18;
+        --muted: #6e6f66;
+        --rule: #d4d4c8;
+        --give: #8c3a2b; /* asks, sell side */
+        --recv: #1c6b4b; /* bids, buy side */
+        --wash: rgba(28, 107, 75, 0.1);
+        --disp: "Archivo", sans-serif;
+        --mono: "IBM Plex Mono", monospace;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        background: var(--paper);
+        color: var(--ink);
+        font-family: var(--mono);
+        font-size: 13px;
+        line-height: 1.5;
+      }
+      a { color: var(--ink); }
+      .wrap { max-width: 1080px; margin: 0 auto; padding: 32px 24px 56px; }
+
+      header { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; flex-wrap: wrap; padding-bottom: 14px; border-bottom: 2px solid var(--ink); }
+      .mark { display: flex; align-items: baseline; gap: 12px; }
+      .logo { font-family: var(--disp); font-weight: 700; font-size: 28px; letter-spacing: -0.02em; }
+      .logo .x { color: var(--give); }
+      .tag { color: var(--muted); font-size: 12px; }
+      .status { text-align: right; font-size: 11.5px; color: var(--muted); }
+      .status b { color: var(--ink); font-weight: 500; }
+      .live::before { content: "●"; color: var(--muted); margin-right: 5px; font-size: 9px; vertical-align: middle; }
+      .live.on::before { color: var(--recv); }
+
+      /* lifecycle: a real sequence, numbered */
+      .life { display: grid; grid-template-columns: repeat(5, 1fr); margin: 26px 0 30px; }
+      .step { padding-right: 18px; position: relative; }
+      .step + .step { padding-left: 18px; border-left: 1px solid var(--rule); }
+      .num { font-family: var(--disp); font-weight: 600; font-size: 12px; border: 1.5px solid var(--ink); width: 24px; height: 24px; display: inline-grid; place-items: center; margin-bottom: 9px; transition: all 0.15s; }
+      .step.lit .num { background: var(--ink); color: var(--paper); }
+      .step .name { font-family: var(--disp); font-weight: 600; font-size: 14px; }
+      .step .desc { color: var(--muted); font-size: 11px; margin-top: 4px; }
+      @media (max-width: 820px) { .life { grid-template-columns: 1fr 1fr; gap: 14px 0; } .step, .step + .step { border: 0; padding: 0 12px; } }
+
+      .cols { display: grid; grid-template-columns: 1.1fr 1fr; gap: 28px; }
+      @media (max-width: 820px) { .cols { grid-template-columns: 1fr; } }
+
+      .sec { font-family: var(--disp); font-weight: 600; font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; display: flex; justify-content: space-between; align-items: baseline; padding-bottom: 8px; border-bottom: 1px solid var(--ink); }
+      .sec .meta { font-family: var(--mono); font-weight: 400; text-transform: none; letter-spacing: 0; color: var(--muted); }
+
+      table { width: 100%; border-collapse: collapse; }
+      th { text-align: right; color: var(--muted); font-weight: 400; padding: 9px 2px 6px; font-size: 11px; }
+      th:first-child, td:first-child { text-align: left; }
+      td { padding: 5px 2px; }
+      tbody tr { border-bottom: 1px dotted var(--rule); }
+      .asks td:nth-child(2) { color: var(--give); font-weight: 500; }
+      .bids td:nth-child(2) { color: var(--recv); font-weight: 500; }
+      .spread { display: flex; justify-content: space-between; padding: 7px 2px; margin: 2px 0; border-top: 1px solid var(--ink); border-bottom: 1px solid var(--ink); font-size: 11px; color: var(--muted); }
+      .empty { padding: 18px 2px; color: var(--muted); }
+
+      .tape tr.fresh td { animation: wash 1.4s ease; }
+      @keyframes wash { from { background: var(--wash); } to { background: transparent; } }
+
+      /* order ticket */
+      .ticket { margin-top: 26px; border: 1.5px solid var(--ink); background: var(--card); }
+      .ticket .head { font-family: var(--disp); font-weight: 600; font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; padding: 10px 14px; border-bottom: 1px solid var(--rule); }
+      .ticket .body { padding: 14px; display: grid; gap: 13px; }
+      .field { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+      .field > span:first-child { color: var(--muted); width: 56px; }
+      .tabs button { background: none; border: 0; border-bottom: 2px solid transparent; padding: 4px 2px; margin-right: 16px; font-family: var(--mono); font-size: 13px; color: var(--muted); cursor: pointer; }
+      .tabs button.sel { color: var(--ink); border-color: var(--ink); font-weight: 600; }
+      input[type="number"] { background: var(--paper); border: 1px solid var(--rule); color: var(--ink); padding: 7px 10px; font-family: var(--mono); font-size: 13px; width: 120px; }
+      input[type="number"]:focus { outline: 2px solid var(--ink); outline-offset: -1px; }
+      .intent { color: var(--muted); }
+      .intent b { color: var(--ink); font-weight: 600; }
+      .intent .g { color: var(--give); }
+      .intent .r { color: var(--recv); }
+      .send { background: var(--ink); color: var(--paper); border: 0; padding: 10px 20px; font-family: var(--disp); font-weight: 600; font-size: 13px; cursor: pointer; }
+      .send:hover { background: #000; }
+      .send:disabled { opacity: 0.45; cursor: default; }
+      .log { border-top: 1px solid var(--rule); padding: 10px 14px; font-size: 11.5px; color: var(--muted); max-height: 120px; overflow-y: auto; }
+      .log .ok { color: var(--recv); }
+      .log .err { color: var(--give); }
+
+      .notice { border: 1px solid var(--give); color: var(--give); padding: 11px 14px; margin: 18px 0; font-size: 12.5px; }
+      footer { margin-top: 30px; padding-top: 14px; border-top: 1px solid var(--rule); color: var(--muted); font-size: 11.5px; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <header>
+        <div class="mark">
+          <span class="logo">cross<span class="x">book</span></span>
+          <span class="tag">a settlement ledger you can watch</span>
+        </div>
+        <div class="status">
+          <span class="live" id="conn-dot">offline</span><br />
+          chain <b id="chain">..</b> · settlement <b id="settle-addr">..</b>
+        </div>
+      </header>
+
+      <div id="notice" class="notice" style="display: none"></div>
+
+      <section class="life" id="pipe">
+        <div class="step" data-k="sign"><div class="num">1</div><div class="name">Sign</div><div class="desc">Maker signs an order off chain. No gas.</div></div>
+        <div class="step" data-k="match"><div class="num">2</div><div class="name">Match</div><div class="desc">The engine crosses it against the book.</div></div>
+        <div class="step" data-k="settle"><div class="num">3</div><div class="name">Settle</div><div class="desc">The contract verifies and swaps atomically.</div></div>
+        <div class="step" data-k="index"><div class="num">4</div><div class="name">Index</div><div class="desc">Trade events are read into Postgres.</div></div>
+        <div class="step" data-k="feed"><div class="num">5</div><div class="name">Feed</div><div class="desc">Subscribers see the fill at once.</div></div>
+      </section>
+
+      <div class="cols">
+        <div>
+          <div class="sec">Order book <span class="meta" id="book-pair">A / B</span></div>
+          <table>
+            <thead><tr><th>order</th><th>price B/A</th><th>remaining</th></tr></thead>
+            <tbody class="asks" id="asks"></tbody>
+          </table>
+          <div class="spread"><span id="spread-l">no asks</span><span id="spread-r">no bids</span></div>
+          <table><tbody class="bids" id="bids"></tbody></table>
+          <div class="empty" id="book-empty">No resting liquidity yet. Submit an order below.</div>
+        </div>
+
+        <div>
+          <div class="sec">Trade tape <span class="meta">live fills</span></div>
+          <table>
+            <thead><tr><th>maker</th><th>gave</th><th>received</th><th>blk</th></tr></thead>
+            <tbody class="tape" id="tape"></tbody>
+          </table>
+          <div class="empty" id="tape-empty">Waiting for the first fill.</div>
+        </div>
+      </div>
+
+      <div class="ticket">
+        <div class="head">New order</div>
+        <div class="body">
+          <div class="field">
+            <span>act as</span>
+            <span class="tabs" id="maker-seg">
+              <button data-m="A" class="sel">Maker A</button>
+              <button data-m="B">Maker B</button>
+            </span>
+          </div>
+          <div class="field">
+            <span>amount</span>
+            <input type="number" id="amount" value="1000" min="1" />
+          </div>
+          <div class="field">
+            <span></span>
+            <span class="intent" id="intent"></span>
+          </div>
+          <div class="field">
+            <span></span>
+            <button class="send" id="send">Sign and submit</button>
+          </div>
+        </div>
+        <div class="log" id="log"></div>
+      </div>
+
+      <footer>
+        Local devnet demo. The keys here are Anvil's public test keys.
+        <a href="https://github.com/frdrckj/crossbook">github.com/frdrckj/crossbook</a>
+      </footer>
+    </div>
+
+    <script type="module">
+      import { privateKeyToAccount } from "https://esm.sh/viem@2/accounts";
+      import { toHex } from "https://esm.sh/viem@2";
+
+      // Anvil test accounts 1 and 2. Local demo only.
+      const MAKERS = {
+        A: { key: "0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d", label: "Maker A" },
+        B: { key: "0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a", label: "Maker B" },
+      };
+
+      const $ = (id) => document.getElementById(id);
+      const short = (a) => (a ? a.slice(0, 6) + "…" + a.slice(-4) : "");
+      let cfg = null;
+      let maker = "A";
+
+      function log(msg, cls = "") {
+        const line = document.createElement("div");
+        if (cls) line.className = cls;
+        line.textContent = msg;
+        $("log").prepend(line);
+      }
+
+      function lit(keys) {
+        for (const k of keys) {
+          const s = document.querySelector(`.step[data-k="${k}"]`);
+          if (!s) continue;
+          s.classList.add("lit");
+          setTimeout(() => s.classList.remove("lit"), 850);
+        }
+      }
+      function flow(keys) {
+        keys.forEach((k, i) => setTimeout(() => lit([k]), i * 280));
+      }
+
+      function price(sell, buy) {
+        const s = Number(sell), b = Number(buy);
+        return s > 0 ? (b / s).toFixed(4) : "—";
+      }
+
+      function refreshIntent() {
+        const amt = $("amount").value || "0";
+        const give = maker === "A" ? "A" : "B";
+        const get = maker === "A" ? "B" : "A";
+        $("intent").innerHTML = `${MAKERS[maker].label}: give <b class="g">${amt} ${give}</b>, want <b class="r">${amt} ${get}</b>`;
+      }
+
+      async function loadConfig() {
+        cfg = await (await fetch("/config")).json();
+        $("chain").textContent = cfg.chain_id;
+        $("settle-addr").textContent = short(cfg.settlement);
+        if (!cfg.token_a || !cfg.token_b) {
+          const n = $("notice");
+          n.style.display = "block";
+          n.textContent = "Demo tokens are not configured. Start with: just demo";
+          $("send").disabled = true;
+        } else {
+          $("book-pair").textContent = `${short(cfg.token_a)} / ${short(cfg.token_b)}`;
+        }
+      }
+
+      async function loadBook() {
+        if (!cfg || !cfg.token_a) return;
+        try {
+          const book = await (await fetch(`/book/${cfg.token_a}/${cfg.token_b}`)).json();
+          const asks = (book.asks || []).sort((x, y) => price(x.sell_amount, x.buy_amount) - price(y.sell_amount, y.buy_amount));
+          const bids = book.bids || [];
+          $("asks").innerHTML = asks.map((o) =>
+            `<tr><td>${short(o.hash)}</td><td>${price(o.sell_amount, o.buy_amount)}</td><td>${o.remaining_sell}</td></tr>`).join("");
+          $("bids").innerHTML = bids.map((o) =>
+            `<tr><td>${short(o.hash)}</td><td>${price(o.buy_amount, o.sell_amount)}</td><td>${o.remaining_sell}</td></tr>`).join("");
+          $("spread-l").textContent = asks.length ? `${asks.length} ask(s)` : "no asks";
+          $("spread-r").textContent = bids.length ? `${bids.length} bid(s)` : "no bids";
+          $("book-empty").style.display = asks.length || bids.length ? "none" : "block";
+        } catch (e) { /* engine momentarily unavailable */ }
+      }
+
+      function openFeed() {
+        const ws = new WebSocket(`ws://${location.host}/ws`);
+        ws.onopen = () => { $("conn-dot").classList.add("on"); $("conn-dot").textContent = "live"; };
+        ws.onclose = () => { $("conn-dot").classList.remove("on"); $("conn-dot").textContent = "offline"; setTimeout(openFeed, 1500); };
+        ws.onmessage = (ev) => {
+          const t = JSON.parse(ev.data);
+          $("tape-empty").style.display = "none";
+          const tr = document.createElement("tr");
+          tr.className = "fresh";
+          tr.innerHTML = `<td>${short(t.maker)}</td><td>${t.sell_filled}</td><td>${t.buy_filled}</td><td>${t.block_number}</td>`;
+          $("tape").prepend(tr);
+          flow(["settle", "index", "feed"]);
+          loadBook();
+        };
+      }
+
+      async function submit() {
+        if (!cfg || !cfg.token_a) return;
+        const btn = $("send");
+        btn.disabled = true;
+        try {
+          const account = privateKeyToAccount(MAKERS[maker].key);
+          const sellToken = maker === "A" ? cfg.token_a : cfg.token_b;
+          const buyToken = maker === "A" ? cfg.token_b : cfg.token_a;
+          const amount = BigInt($("amount").value || "0");
+          const domain = { name: "Crossbook", version: "1", chainId: cfg.chain_id, verifyingContract: cfg.settlement };
+          const types = { Order: [
+            { name: "maker", type: "address" }, { name: "sellToken", type: "address" }, { name: "buyToken", type: "address" },
+            { name: "sellAmount", type: "uint256" }, { name: "buyAmount", type: "uint256" }, { name: "validTo", type: "uint256" },
+            { name: "nonce", type: "uint256" }, { name: "partiallyFillable", type: "bool" },
+          ] };
+          const validTo = 4000000000n;
+          const nonce = BigInt(Date.now());
+          const message = { maker: account.address, sellToken, buyToken, sellAmount: amount, buyAmount: amount, validTo, nonce, partiallyFillable: true };
+          lit(["sign"]);
+          const signature = await account.signTypedData({ domain, types, primaryType: "Order", message });
+          const payload = {
+            maker: account.address, sell_token: sellToken, buy_token: buyToken,
+            sell_amount: toHex(amount), buy_amount: toHex(amount),
+            valid_to: Number(validTo), nonce: toHex(nonce), partially_fillable: true, signature,
+          };
+          const res = await fetch("/orders", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) });
+          const body = await res.json();
+          if (res.ok) {
+            log(`${MAKERS[maker].label} order ${body.status} ${short(body.hash)}`, "ok");
+            lit(["match"]);
+          } else {
+            log(`rejected: ${body.error || res.status}`, "err");
+          }
+          loadBook();
+        } catch (e) {
+          log("error: " + (e.message || e), "err");
+        } finally {
+          btn.disabled = false;
+        }
+      }
+
+      document.querySelectorAll("#maker-seg button").forEach((b) =>
+        b.addEventListener("click", () => {
+          maker = b.dataset.m;
+          document.querySelectorAll("#maker-seg button").forEach((x) => x.classList.toggle("sel", x === b));
+          refreshIntent();
+        })
+      );
+      $("amount").addEventListener("input", refreshIntent);
+      $("send").addEventListener("click", submit);
+
+      await loadConfig();
+      refreshIntent();
+      openFeed();
+      loadBook();
+      setInterval(loadBook, 1500);
+    </script>
+  </body>
+</html>

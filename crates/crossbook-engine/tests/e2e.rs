@@ -165,6 +165,12 @@ async fn full_flow_settles_indexes_and_broadcasts() {
         seq: Arc::new(AtomicU64::new(0)),
         trades_tx,
         metrics,
+        demo: api::DemoConfig {
+            chain_id,
+            settlement: settlement_addr.to_string(),
+            token_a: Some(ta.to_string()),
+            token_b: Some(tb.to_string()),
+        },
     };
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();

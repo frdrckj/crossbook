@@ -17,3 +17,7 @@ contracts/broadcast/
 
 # The internal build spec (+ any backups/versions) — never publish.
 crossbook rough*.md
+
+# Local screenshot and tooling artifacts
+.playwright-mcp/
+*.png

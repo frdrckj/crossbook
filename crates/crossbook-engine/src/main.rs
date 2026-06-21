@@ -34,6 +34,13 @@ async fn main() -> Result<()> {
 
     tokio::spawn(indexer::run(chain.clone(), db.clone(), trades_tx.clone()));
 
+    let demo = api::DemoConfig {
+        chain_id,
+        settlement: cfg.settlement.to_string(),
+        token_a: std::env::var("DEMO_TOKEN_A").ok(),
+        token_b: std::env::var("DEMO_TOKEN_B").ok(),
+    };
+
     let state = api::AppState {
         engine,
         chain,
@@ -43,6 +50,7 @@ async fn main() -> Result<()> {
         seq: Arc::new(AtomicU64::new(0)),
         trades_tx,
         metrics,
+        demo,
     };
 
     let listener = tokio::net::TcpListener::bind(cfg.bind)
