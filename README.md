@@ -4,21 +4,6 @@ Crossbook is a noncustodial hybrid decentralized exchange. Traders sign orders o
 
 Funds stay in the trader's wallet until the moment of execution. A maker grants the settlement contract an ERC-20 allowance once, and the contract pulls tokens only when it settles, after it has independently rechecked every signature, nonce, expiry, and limit price onchain. The matching core is pure and deterministic. It has no async, no I/O, and no clock, and a single writer task owns it. That is what makes it both fast and easy to test exhaustively.
 
-## Status
-
-M0 through M3 are done, including the EIP-712 parity gate and the settlement contract. The project is built one milestone at a time.
-
-| Milestone | Scope | State |
-| --- | --- | --- |
-| M0 | Workspace, CI, Foundry skeleton, local devnet | done |
-| M1 | Pure matching core (types, book, matcher) with property tests and benchmarks | done |
-| M2 | EIP-712 digest parity between Rust and Solidity (the gate) | done |
-| M3 | CrossbookSettlement.sol with unit, fuzz, and invariant suites | done |
-| M4 | Engine service (axum REST and WebSocket, ingest, settle, indexer, metrics) | in progress |
-| M5 | CLI, end to end test, and the full README, threat model, and benchmarks | todo |
-| M6 | Stretch: batch auction with a uniform clearing price (toward CoW) | todo |
-| M7 | Stretch: perps margin and liquidation risk engine (toward Curated) | todo |
-
 ## Stack
 
 Rust on Tokio. Alloy for Ethereum, not `ethers-rs`, which is deprecated. axum for the API. sqlx with PostgreSQL. Foundry and Solidity 0.8.24 with OpenZeppelin. proptest and criterion for tests and benchmarks. tracing with a Prometheus metrics endpoint.
