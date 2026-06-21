@@ -7,6 +7,7 @@ description = "Pure, deterministic order book and price-time-priority matching e
 
 [dependencies]
 alloy-primitives = "1.6.0"
+alloy-sol-types = "1.6.0"
 thiserror.workspace = true
 
 [dev-dependencies]

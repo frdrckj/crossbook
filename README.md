@@ -6,14 +6,14 @@ Funds stay in the trader's wallet until the moment of execution. A maker grants 
 
 ## Status
 
-M0 (scaffolding) is done. The project is built one milestone at a time.
+M0 through M2 are done, including the EIP-712 parity gate. The project is built one milestone at a time.
 
 | Milestone | Scope | State |
 | --- | --- | --- |
 | M0 | Workspace, CI, Foundry skeleton, local devnet | done |
-| M1 | Pure matching core (types, book, matcher) with property tests and benchmarks | in progress |
-| M2 | EIP-712 digest parity between Rust and Solidity (the gate) | todo |
-| M3 | CrossbookSettlement.sol with unit, fuzz, and invariant suites | todo |
+| M1 | Pure matching core (types, book, matcher) with property tests and benchmarks | done |
+| M2 | EIP-712 digest parity between Rust and Solidity (the gate) | done |
+| M3 | CrossbookSettlement.sol with unit, fuzz, and invariant suites | in progress |
 | M4 | Engine service (axum REST and WebSocket, ingest, settle, indexer, metrics) | todo |
 | M5 | CLI, end to end test, and the full README, threat model, and benchmarks | todo |
 | M6 | Stretch: batch auction with a uniform clearing price (toward CoW) | todo |

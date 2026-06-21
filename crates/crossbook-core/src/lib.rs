@@ -8,6 +8,7 @@
 //! Milestone status: M1, pure matching core under construction.
 
 pub mod book;
+pub mod eip712;
 pub mod error;
 pub mod price;
 pub mod types;
