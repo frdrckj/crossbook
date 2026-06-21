@@ -13,8 +13,8 @@ license = "MIT"
 repository = "https://github.com/frdrckj/crossbook"
 rust-version = "1.85"
 
-# Shared, version-pinned dependencies. Crates opt in with `dep.workspace = true`.
-# Added per-milestone as they are actually needed (M1+); empty deps stay out.
+# Shared dependencies, pinned once here. Crates opt in with `dep.workspace = true`.
+# Added as each milestone needs them.
 [workspace.dependencies]
 anyhow = "1"
 thiserror = "2"

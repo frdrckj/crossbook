@@ -23,7 +23,7 @@ test:
 forge-test:
     cd contracts && forge test
 
-# Matching-core microbenchmarks (M1+).
+# Matching core microbenchmarks (M1 onward).
 bench:
     cargo bench -p crossbook-core
 
@@ -34,6 +34,6 @@ dev:
 deploy-local:
     cd contracts && forge script script/Deploy.s.sol --rpc-url $RPC_URL --broadcast
 
-# Full end-to-end flow against Anvil (implemented at M5).
+# Full end to end flow against Anvil (runs at M5).
 e2e:
     @echo "e2e: implemented at M5"

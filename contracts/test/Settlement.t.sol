@@ -290,7 +290,7 @@ contract SettlementTest is Test {
     {
         aSell = bound(aSell, 1, 1e30);
         aBuy = bound(aBuy, 1, 1e30);
-        // re-mint to cover fuzzed amounts
+        // mint more to cover the fuzzed amounts
         tokenA.mint(makerA, aSell);
         tokenB.mint(makerB, aBuy);
 

@@ -1,17 +1,17 @@
-//! Overflow-safe limit-price comparison and fill arithmetic.
+//! Price comparison and fill arithmetic that cannot overflow.
 //!
-//! An order's price is the ratio `buy_amount / sell_amount`. Comparing two ratios
-//! `b1/s1` vs `b2/s2` (with `s1, s2 > 0`) is done by cross-multiplication:
-//! `b1·s2` vs `b2·s1`. Those products reach ~512 bits when the inputs approach
-//! `2^256`, so a 256-bit multiply would panic (debug) or silently **wrap**
-//! (release). Everything here widens to 512 bits first, which cannot overflow.
+//! An order's price is the ratio buy_amount / sell_amount. To compare two ratios
+//! b1/s1 and b2/s2 (with s1, s2 > 0) we cross multiply: b1*s2 against b2*s1. Those
+//! products reach about 512 bits as the inputs approach 2^256, so a 256 bit
+//! multiply would panic in debug and wrap in release. Everything here widens to
+//! 512 bits first.
 
 use alloy_primitives::{U256, U512};
 use core::cmp::Ordering;
 
 /// Compare the ratio `b1/s1` against `b2/s2`. Caller guarantees `s1 > 0` and `s2 > 0`.
 pub fn cmp_limit(b1: U256, s1: U256, b2: U256, s2: U256) -> Ordering {
-    // cross: b1/s1 ? b2/s2  <=>  b1·s2 ? b2·s1, widened so it cannot overflow.
+    // b1/s1 vs b2/s2 is the same as b1*s2 vs b2*s1, widened so it cannot overflow.
     let lhs: U512 = b1.widening_mul(s2);
     let rhs: U512 = b2.widening_mul(s1);
     lhs.cmp(&rhs)
@@ -31,8 +31,8 @@ fn narrow(x: U512) -> U256 {
     U256::from_le_slice(&bytes[..32])
 }
 
-/// `ceil(a·b / d)`. Caller guarantees `d > 0` and that the true result is `< 2^256`.
-/// Used to round a maker's received amount **up** (in the maker's favor).
+/// ceil(a*b / d). Caller guarantees d > 0 and that the true result is below 2^256.
+/// Rounds a maker's received amount up, in the maker's favor.
 pub(crate) fn mul_div_ceil(a: U256, b: U256, d: U256) -> U256 {
     let num: U512 = a.widening_mul(b);
     let dd = to_u512(d);
@@ -45,8 +45,8 @@ pub(crate) fn mul_div_ceil(a: U256, b: U256, d: U256) -> U256 {
     narrow(q)
 }
 
-/// `min(floor(a·b / d), cap)`. Caller guarantees `d > 0`. The result is `<= cap`,
-/// so it always fits in `U256` even when `floor(a·b/d)` would not.
+/// min(floor(a*b / d), cap). Caller guarantees d > 0. The result is at most cap,
+/// so it always fits in U256 even when floor(a*b/d) would not.
 pub(crate) fn cap_floor(a: U256, b: U256, d: U256, cap: U256) -> U256 {
     let q: U512 = a.widening_mul(b) / to_u512(d);
     let cap512 = to_u512(cap);

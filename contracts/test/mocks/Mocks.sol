@@ -34,8 +34,8 @@ contract FeeOnTransferToken is ERC20 {
     }
 }
 
-/// An ERC20 that tries to re-enter settle on transfer. Any successful reentrancy
-/// would be a double spend; the call must revert instead.
+/// An ERC20 that tries to reenter settle on transfer. Any successful reentrancy
+/// would be a double spend, so the call must revert instead.
 contract ReentrantToken is ERC20 {
     CrossbookSettlement public settlement;
     bool public armed;
@@ -53,8 +53,8 @@ contract ReentrantToken is ERC20 {
 
     function _update(address from, address to, uint256 value) internal override {
         if (armed && address(settlement) != address(0) && from == address(settlement)) {
-            // Re-enter during the send phase. Reverts (NotSolver / guard), which
-            // bubbles up and reverts the whole settlement.
+            // Reenter during the send phase. This reverts (NotSolver or the
+            // guard) and bubbles up to revert the whole settlement.
             settlement.settle(new SignedOrder[](0), new Fill[](0));
         }
         super._update(from, to, value);

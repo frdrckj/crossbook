@@ -1,16 +1,15 @@
 //! The order book and the continuous price then time priority matcher.
 //!
-//! Orders are grouped by directed pair `(sell_token, buy_token)`. An incoming
-//! order matches against the opposite directed pair. Within a pair, resting
-//! orders are kept in a price ordered map (best price first) of FIFO queues, so
-//! the best price matches first and equal prices match in arrival order.
+//! Orders are grouped by directed pair (sell_token, buy_token), and an incoming
+//! order matches against the opposite pair. Resting orders sit in a price ordered
+//! map of FIFO queues, so the best price matches first and equal prices match in
+//! arrival order.
 //!
-//! Execution uses the resting maker's price (price priority gives the maker its
-//! limit). The maker's received amount is rounded up, in the maker's favor. A
-//! fill is only produced when it also respects the taker's signed limit. A maker
-//! whose remaining amount is too small to clear at a ratio the taker accepts is
-//! skipped, not matched, so its dust rests until a compatible counterparty
-//! arrives. This is pure: no async, no clock, no rng.
+//! Trades execute at the resting maker's price, and the maker's received amount
+//! is rounded up in its favor. A fill is only produced when it also respects the
+//! taker's signed limit, so a maker whose remaining amount is too small to clear
+//! at a ratio the taker accepts is skipped rather than matched, leaving its dust
+//! to rest. The matcher does no I/O and keeps no clock.
 
 use crate::price::{self, cmp_limit};
 use crate::types::{Fill, OpenOrder, Order, OrderHash, SubmitOutcome};
@@ -239,8 +238,8 @@ impl OrderBook {
     /// a fill against the book. The matcher must leave a book where this is false
     /// (a fixpoint), so it doubles as the maximal matching assertion.
     pub fn crossable_fill_exists(&self) -> bool {
-        // ponytail: O(n^2) over resting orders; fine for assertions and small
-        // books. A per pair best-vs-best check would be cheaper if ever needed.
+        // O(n^2) over resting orders, which is fine for assertions and small
+        // books. A per pair best versus best check would be cheaper if needed.
         let all: Vec<&OpenOrder> = self
             .sides
             .values()

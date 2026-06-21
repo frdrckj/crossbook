@@ -1,11 +1,9 @@
-//! # crossbook-core
+//! The pure matching core of Crossbook.
 //!
-//! The pure matching core of Crossbook. By design this crate has **no async, no
-//! I/O, no clock, and no rng** — matching is a deterministic function of
-//! `(book_state, ordered_inputs) -> (new_state, trades)`. That purity is what
-//! makes it fast (single-writer hot path) and testable (golden-replay + proptest).
-//!
-//! Milestone status: M1, pure matching core under construction.
+//! The crate does no I/O and keeps no clock. Matching is a deterministic function
+//! of the book state and the ordered inputs, which is what makes the single writer
+//! hot path fast and the engine easy to test with golden replays and property
+//! tests.
 
 pub mod book;
 pub mod eip712;
