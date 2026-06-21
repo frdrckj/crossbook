@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 14503693540d31cef142ef6aa77c3f567229cd783606944fdbb9b6f03fdbbfca # shrinks to specs = [Spec { sell_token: 1, buy_token: 2, sell: 1, buy: 2, partial: false }, Spec { sell_token: 1, buy_token: 2, sell: 581549, buy: 716552, partial: false }, Spec { sell_token: 2, buy_token: 1, sell: 1, buy: 2, partial: false }, Spec { sell_token: 2, buy_token: 1, sell: 128006, buy: 341661, partial: true }, Spec { sell_token: 1, buy_token: 2, sell: 253531, buy: 1, partial: true }, Spec { sell_token: 1, buy_token: 2, sell: 647698, buy: 3, partial: true }, Spec { sell_token: 2, buy_token: 1, sell: 2, buy: 3, partial: true }]

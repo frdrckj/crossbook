@@ -6,4 +6,15 @@ license.workspace = true
 description = "Pure, deterministic order book and price-time-priority matching engine."
 
 [dependencies]
-# M0: none. M1 adds alloy-primitives (Address/U256) + thiserror. Kept pure: no async, no I/O.
+alloy-primitives = "1.6.0"
+thiserror.workspace = true
+
+[dev-dependencies]
+criterion = "0.8.2"
+num-bigint = "0.4.6"     # cmp_limit oracle
+num-rational = "0.4.2"   # cmp_limit oracle
+proptest = "1.11.0"
+
+[[bench]]
+name = "matching"
+harness = false
