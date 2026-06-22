@@ -50,4 +50,6 @@ e2e:
     docker compose up -d
     sleep 4
     cd contracts && forge build
-    DATABASE_URL=postgres://crossbook:crossbook@localhost:5432/crossbook RPC_URL=http://localhost:8545 cargo test -p crossbook-engine --features e2e --test e2e --test db -- --nocapture
+    # One test thread: the e2e flows share one Anvil and deploy from the same
+    # account, so they must not race on nonces.
+    DATABASE_URL=postgres://crossbook:crossbook@localhost:5432/crossbook RPC_URL=http://localhost:8545 cargo test -p crossbook-engine --features e2e --test e2e --test db -- --nocapture --test-threads=1
