@@ -249,7 +249,10 @@
           const b = await (await fetch("/batch")).json();
           if (b.mode !== "batch") { $("batch-panel").style.display = "none"; return; }
           $("batch-panel").style.display = "block";
-          $("batch-meta").textContent = "uniform price call auction";
+          const rings = b.last_rings || 0;
+          $("batch-meta").textContent = rings > 0
+            ? `uniform price call auction · ${rings} ring${rings === 1 ? "" : "s"} last window`
+            : "uniform price call auction";
           $("batch-interval").textContent = `${b.interval_secs}s`;
           windowClosesAt = b.window_closes_at || 0;
           $("batch-collected").textContent = $("asks").children.length + $("bids").children.length;

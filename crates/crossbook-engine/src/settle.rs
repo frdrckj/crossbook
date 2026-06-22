@@ -10,6 +10,7 @@ use crate::chain::Settlement;
 use alloy::primitives::{Bytes, U256};
 use anyhow::{bail, Result};
 use crossbook_core::auction::AuctionResult;
+use crossbook_core::ring::RingResult;
 use crossbook_core::types::{Fill as CoreFill, Order as CoreOrder, OrderHash};
 use std::collections::HashMap;
 
@@ -115,6 +116,30 @@ pub fn to_batch_settlement(
         }
     }
     Ok((signed, rows, prices))
+}
+
+/// Build the plain `settle` arguments for a set of cleared rings. Each ring nets
+/// to zero across its own tokens and every fill respects its maker's limit, so the
+/// existing settle path verifies it with no uniform price assertion needed. Errors
+/// if a referenced order is unknown.
+pub fn to_ring_settlement(
+    rings: &[RingResult],
+    admitted: &HashMap<OrderHash, AdmittedOrder>,
+) -> Result<(Vec<Settlement::SignedOrder>, Vec<Settlement::Fill>)> {
+    let mut index = HashMap::new();
+    let mut signed = Vec::new();
+    let mut rows = Vec::new();
+    for r in rings {
+        for f in &r.fills {
+            let i = index_of(&f.order_hash, &mut index, &mut signed, admitted)?;
+            rows.push(Settlement::Fill {
+                orderIndex: U256::from(i),
+                sellFilled: f.sell_filled,
+                buyFilled: f.buy_filled,
+            });
+        }
+    }
+    Ok((signed, rows))
 }
 
 #[cfg(test)]

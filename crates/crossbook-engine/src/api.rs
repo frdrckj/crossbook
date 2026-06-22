@@ -72,6 +72,8 @@ pub struct BatchState {
     pub window_closes_at: u64,
     pub last_close_at: u64,
     pub last_results: Vec<ClearingView>,
+    /// Number of multi token rings cleared in the last window.
+    pub last_rings: u64,
 }
 
 /// Shared engine state. Cheap to clone (everything inside is shared).

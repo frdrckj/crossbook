@@ -40,8 +40,8 @@ pub async fn run_window(
         ticker.tick().await;
 
         let now = now_secs();
-        let results = match engine.close_batch(now).await {
-            Ok(r) => r,
+        let outcome = match engine.close_batch(now).await {
+            Ok(o) => o,
             Err(_) => {
                 tracing::error!("engine task gone, stopping batch window");
                 return;
@@ -50,30 +50,54 @@ pub async fn run_window(
 
         if let Ok(mut s) = state.lock() {
             s.last_close_at = now;
-            s.last_results = results.iter().map(ClearingView::from).collect();
+            s.last_results = outcome.pairs.iter().map(ClearingView::from).collect();
+            s.last_rings = outcome.rings.len() as u64;
         }
-        if results.is_empty() {
+        if outcome.pairs.is_empty() && outcome.rings.is_empty() {
             continue;
         }
 
         let map = admitted.lock().ok().map(|m| m.clone()).unwrap_or_default();
-        let (signed, fills, prices) = match settle::to_batch_settlement(&results, &map) {
-            Ok(args) => args,
-            Err(e) => {
-                tracing::error!(error = ?e, "failed to build batch settlement");
-                continue;
-            }
-        };
-        let pairs = results.len();
-        let chain = chain.clone();
-        tokio::spawn(async move {
-            match chain.settle_batch(signed, fills, prices).await {
-                Ok(tx) => {
-                    metrics::counter!("crossbook_batches_total").increment(1);
-                    tracing::info!(%tx, pairs, "settled batch auction");
+
+        // Pairs settle through settleBatch with their uniform price assertion.
+        if !outcome.pairs.is_empty() {
+            match settle::to_batch_settlement(&outcome.pairs, &map) {
+                Ok((signed, fills, prices)) => {
+                    let pairs = outcome.pairs.len();
+                    let chain = chain.clone();
+                    tokio::spawn(async move {
+                        match chain.settle_batch(signed, fills, prices).await {
+                            Ok(tx) => {
+                                metrics::counter!("crossbook_batches_total").increment(1);
+                                tracing::info!(%tx, pairs, "settled batch auction");
+                            }
+                            Err(e) => tracing::error!(error = ?e, "batch settle submission failed"),
+                        }
+                    });
                 }
-                Err(e) => tracing::error!(error = ?e, "batch settle submission failed"),
+                Err(e) => tracing::error!(error = ?e, "failed to build batch settlement"),
             }
-        });
+        }
+
+        // Rings net to zero across their own tokens and respect every limit, so
+        // they settle through the plain settle path with no uniform price.
+        if !outcome.rings.is_empty() {
+            match settle::to_ring_settlement(&outcome.rings, &map) {
+                Ok((signed, fills)) => {
+                    let rings = outcome.rings.len();
+                    let chain = chain.clone();
+                    tokio::spawn(async move {
+                        match chain.settle(signed, fills).await {
+                            Ok(tx) => {
+                                metrics::counter!("crossbook_rings_total").increment(1);
+                                tracing::info!(%tx, rings, "settled token rings");
+                            }
+                            Err(e) => tracing::error!(error = ?e, "ring settle submission failed"),
+                        }
+                    });
+                }
+                Err(e) => tracing::error!(error = ?e, "failed to build ring settlement"),
+            }
+        }
     }
 }

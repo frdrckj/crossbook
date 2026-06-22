@@ -8,6 +8,7 @@ use crossbook_engine::engine_task;
 
 const A: u8 = 0x0A;
 const B: u8 = 0x0B;
+const C: u8 = 0x0C;
 
 fn order(seq: u64, hash: u8, st: u8, sa: u64, bt: u8, ba: u64) -> OpenOrder {
     let o = Order {
@@ -60,9 +61,10 @@ async fn batch_mode_collects_then_clears_on_close() {
     assert_eq!(engine.snapshot().len(), 2); // both collected, awaiting the window
 
     // Closing the window clears the pair at one to one and empties the buffer.
-    let results = engine.close_batch(u64::MAX - 1).await.unwrap();
-    assert_eq!(results.len(), 1);
-    assert_eq!(results[0].volume_base, U256::from(100u64));
+    let outcome = engine.close_batch(u64::MAX - 1).await.unwrap();
+    assert_eq!(outcome.pairs.len(), 1);
+    assert_eq!(outcome.pairs[0].volume_base, U256::from(100u64));
+    assert!(outcome.rings.is_empty());
     assert_eq!(engine.snapshot().len(), 0); // both fully spent, nothing rolls over
 }
 
@@ -74,12 +76,26 @@ async fn batch_mode_rolls_unmatched_remainder() {
     engine.submit(order(0, 1, A, 100, B, 100)).await.unwrap();
     engine.submit(order(1, 2, B, 40, A, 40)).await.unwrap();
 
-    let results = engine.close_batch(u64::MAX - 1).await.unwrap();
-    assert_eq!(results[0].volume_base, U256::from(40u64));
+    let outcome = engine.close_batch(u64::MAX - 1).await.unwrap();
+    assert_eq!(outcome.pairs[0].volume_base, U256::from(40u64));
     let rest = engine.snapshot();
     assert_eq!(rest.len(), 1);
     assert_eq!(rest[0].hash, [1; 32]);
     assert_eq!(rest[0].remaining_sell, U256::from(60u64));
+}
+
+#[tokio::test]
+async fn batch_mode_clears_a_three_token_ring() {
+    let engine = engine_task::spawn(64, MatchingMode::Batch);
+    // A -> B -> C -> A: no two orders share a pair, but the ring crosses.
+    engine.submit(order(0, 1, A, 100, B, 90)).await.unwrap();
+    engine.submit(order(1, 2, B, 90, C, 80)).await.unwrap();
+    engine.submit(order(2, 3, C, 80, A, 70)).await.unwrap();
+
+    let outcome = engine.close_batch(u64::MAX - 1).await.unwrap();
+    assert!(outcome.pairs.is_empty()); // nothing clears as a pair
+    assert_eq!(outcome.rings.len(), 1);
+    assert_eq!(outcome.rings[0].tokens.len(), 3);
 }
 
 #[tokio::test]
