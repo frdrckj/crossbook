@@ -29,3 +29,27 @@ counting allocator.
 
 The crossing path sustains on the order of 6 million fills per second on this
 machine. Numbers vary with hardware; rerun `just bench` for your own.
+
+## Settlement gas
+
+From the Foundry gas report (`forge test --gas-report`) for a two order balanced
+clearing:
+
+| Entry point | Gas | Notes |
+| --- | --- | --- |
+| `settle` | about 165k | continuous mode, one balanced pair |
+| `settleBatch` | about 201k | the same pair, plus the uniform price assertion, the price set validation, and the BatchSettled event, about 36k more |
+
+A ring settles through `settle`, so it carries the same per fill cost as a
+continuous settlement of the same number of legs.
+
+## Differential fuzz
+
+`just e2e` runs a cross implementation differential test
+(`crates/crossbook-engine/tests/differential.rs`): it generates random partially
+fillable orders over three tokens, clears them with the real `run_auction` and
+`find_ring`, and submits the exact settlement calldata to a live contract on
+Anvil. A representative run cleared 27 pair clearings and 15 rings across 30
+random batches, every one accepted on chain, with the contract holding zero
+inventory after each. A batch the core produces that the contract would reject is
+a differential bug, which this test exists to catch.
