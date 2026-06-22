@@ -67,8 +67,10 @@ jobs:
       - uses: foundry-rs/foundry-toolchain@v1
       - run: forge build
         working-directory: contracts
-      - name: run db and e2e tests against live services
+      - name: run db, e2e, and differential tests against live services
         run: |
           anvil --silent --chain-id 31337 &
           sleep 3
-          cargo test -p crossbook-engine --features e2e --test db --test e2e
+          # One test thread: the e2e flows share one Anvil and deploy from the
+          # same account, so they must not race on nonces.
+          cargo test -p crossbook-engine --features e2e --test db --test e2e --test differential -- --test-threads=1
