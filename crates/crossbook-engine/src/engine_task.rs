@@ -6,8 +6,12 @@
 //! channel: the writer publishes an immutable snapshot into a watch channel that
 //! readers load without locking the writer.
 
+use crate::config::MatchingMode;
+use alloy::primitives::U256;
+use crossbook_core::auction::{run_auction, AuctionResult};
 use crossbook_core::book::OrderBook;
 use crossbook_core::types::{Fill, OpenOrder, OrderHash, SubmitOutcome};
+use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot, watch};
 
@@ -36,6 +40,10 @@ enum Command {
     Cancel {
         hash: OrderHash,
         reply: oneshot::Sender<bool>,
+    },
+    CloseBatch {
+        now: u64,
+        reply: oneshot::Sender<Vec<AuctionResult>>,
     },
 }
 
@@ -89,6 +97,18 @@ impl EngineHandle {
         rx.await.map_err(|_| EngineError::Closed)
     }
 
+    /// Close the current batch window: clear the collected orders at a uniform
+    /// price per pair, advance the remaining quantities, and return the results.
+    /// In continuous mode there is no buffer, so this returns an empty list.
+    pub async fn close_batch(&self, now: u64) -> Result<Vec<AuctionResult>, EngineError> {
+        let (reply, rx) = oneshot::channel();
+        self.tx
+            .send(Command::CloseBatch { now, reply })
+            .await
+            .map_err(|_| EngineError::Closed)?;
+        rx.await.map_err(|_| EngineError::Closed)
+    }
+
     /// The current resting book, read without locking the writer.
     pub fn snapshot(&self) -> BookView {
         self.book.borrow().clone()
@@ -96,35 +116,88 @@ impl EngineHandle {
 }
 
 /// Spawn the writer task with a bounded command queue, returning a handle.
-pub fn spawn(capacity: usize) -> EngineHandle {
+///
+/// In continuous mode the task crosses each order against the book on arrival. In
+/// batch mode it instead buffers orders and clears them on `close_batch`. The two
+/// modes never run at once; the snapshot exposes the resting book in continuous
+/// mode and the collected orders in batch mode.
+pub fn spawn(capacity: usize, mode: MatchingMode) -> EngineHandle {
     let (tx, mut rx) = mpsc::channel::<Command>(capacity);
     let (book_tx, book_rx) = watch::channel::<BookView>(Arc::new(Vec::new()));
 
     tokio::spawn(async move {
         let mut book = OrderBook::new();
+        let mut buffer: Vec<OpenOrder> = Vec::new();
         let mut fills = Vec::new();
         while let Some(cmd) = rx.recv().await {
             match cmd {
-                Command::Submit { order, reply } => {
-                    fills.clear();
-                    let outcome = book.submit(*order, &mut fills);
-                    let result = SubmitResult {
-                        outcome,
-                        fills: fills.clone(),
-                    };
-                    // Publish the snapshot before replying, so a caller that has
-                    // its reply always sees an up to date book.
-                    let _ = book_tx.send(Arc::new(book.resting_orders()));
-                    let _ = reply.send(result);
-                }
+                Command::Submit { order, reply } => match mode {
+                    MatchingMode::Continuous => {
+                        fills.clear();
+                        let outcome = book.submit(*order, &mut fills);
+                        let result = SubmitResult {
+                            outcome,
+                            fills: fills.clone(),
+                        };
+                        // Publish the snapshot before replying, so a caller that
+                        // has its reply always sees an up to date book.
+                        let _ = book_tx.send(Arc::new(book.resting_orders()));
+                        let _ = reply.send(result);
+                    }
+                    MatchingMode::Batch => {
+                        // Hold the order until the window closes; nothing fills yet.
+                        buffer.push(*order);
+                        let _ = book_tx.send(Arc::new(buffer.clone()));
+                        let _ = reply.send(SubmitResult {
+                            outcome: SubmitOutcome::Resting,
+                            fills: Vec::new(),
+                        });
+                    }
+                },
                 Command::Cancel { hash, reply } => {
-                    let removed = book.cancel(&hash);
-                    let _ = book_tx.send(Arc::new(book.resting_orders()));
+                    let removed = match mode {
+                        MatchingMode::Continuous => book.cancel(&hash),
+                        MatchingMode::Batch => {
+                            let before = buffer.len();
+                            buffer.retain(|o| o.hash != hash);
+                            buffer.len() != before
+                        }
+                    };
+                    let snapshot = match mode {
+                        MatchingMode::Continuous => book.resting_orders(),
+                        MatchingMode::Batch => buffer.clone(),
+                    };
+                    let _ = book_tx.send(Arc::new(snapshot));
                     let _ = reply.send(removed);
+                }
+                Command::CloseBatch { now, reply } => {
+                    // Drop expired orders, clear, then advance remaining amounts.
+                    buffer.retain(|o| o.order.valid_to > now);
+                    let results = run_auction(&buffer);
+                    apply_fills(&mut buffer, &results);
+                    buffer.retain(|o| !o.remaining_sell.is_zero());
+                    let _ = book_tx.send(Arc::new(buffer.clone()));
+                    let _ = reply.send(results);
                 }
             }
         }
     });
 
     EngineHandle { tx, book: book_rx }
+}
+
+/// Subtract each order's filled sell amount from its remaining, so a partly
+/// filled order rolls into the next window at its reduced size.
+fn apply_fills(buffer: &mut [OpenOrder], results: &[AuctionResult]) {
+    let mut filled: HashMap<OrderHash, U256> = HashMap::new();
+    for r in results {
+        for f in &r.fills {
+            *filled.entry(f.order_hash).or_default() += f.sell_filled;
+        }
+    }
+    for o in buffer.iter_mut() {
+        if let Some(amt) = filled.get(&o.hash) {
+            o.remaining_sell = o.remaining_sell.saturating_sub(*amt);
+        }
+    }
 }

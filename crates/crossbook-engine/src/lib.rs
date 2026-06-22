@@ -2,6 +2,7 @@
 //! share them.
 
 pub mod api;
+pub mod batch;
 pub mod chain;
 pub mod config;
 pub mod db;

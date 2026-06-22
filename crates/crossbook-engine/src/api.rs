@@ -34,6 +34,44 @@ pub struct DemoConfig {
     pub token_b: Option<String>,
 }
 
+/// One pair's clearing in the most recent batch, for the dashboard.
+#[derive(Clone, Serialize)]
+pub struct ClearingView {
+    pub base: String,
+    pub quote: String,
+    pub clearing_num: String,
+    pub clearing_den: String,
+    pub volume_base: String,
+    pub surplus: String,
+    pub fills: usize,
+}
+
+impl From<&crossbook_core::auction::AuctionResult> for ClearingView {
+    fn from(r: &crossbook_core::auction::AuctionResult) -> Self {
+        ClearingView {
+            base: r.base.to_string(),
+            quote: r.quote.to_string(),
+            clearing_num: r.clearing_num.to_string(),
+            clearing_den: r.clearing_den.to_string(),
+            volume_base: r.volume_base.to_string(),
+            surplus: r.surplus.to_string(),
+            fills: r.fills.len(),
+        }
+    }
+}
+
+/// Live view of the batch window, updated by the window driver. In continuous
+/// mode it just reports the mode and stays otherwise empty.
+#[derive(Clone, Serialize, Default)]
+pub struct BatchState {
+    pub mode: String,
+    pub interval_secs: u64,
+    /// Unix seconds when the current window closes (0 in continuous mode).
+    pub window_closes_at: u64,
+    pub last_close_at: u64,
+    pub last_results: Vec<ClearingView>,
+}
+
 /// Shared engine state. Cheap to clone (everything inside is shared).
 #[derive(Clone)]
 pub struct AppState {
@@ -46,6 +84,7 @@ pub struct AppState {
     pub trades_tx: broadcast::Sender<TradeRow>,
     pub metrics: Arc<PrometheusHandle>,
     pub demo: DemoConfig,
+    pub batch: Arc<Mutex<BatchState>>,
 }
 
 pub fn router(state: AppState) -> Router {
@@ -57,6 +96,7 @@ pub fn router(state: AppState) -> Router {
         .route("/orders", post(post_order))
         .route("/orders/{hash}", get(get_order).delete(cancel_order))
         .route("/book/{base}/{quote}", get(get_book))
+        .route("/batch", get(get_batch))
         .route("/trades", get(get_trades))
         .route("/ws", get(ws_handler))
         .with_state(state)
@@ -68,6 +108,11 @@ async fn index() -> Html<&'static str> {
 
 async fn config(State(st): State<AppState>) -> Json<DemoConfig> {
     Json(st.demo.clone())
+}
+
+async fn get_batch(State(st): State<AppState>) -> Response {
+    let snapshot = st.batch.lock().ok().map(|s| s.clone()).unwrap_or_default();
+    Json(snapshot).into_response()
 }
 
 async fn health() -> &'static str {

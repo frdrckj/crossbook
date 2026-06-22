@@ -9,6 +9,7 @@
 use crate::chain::Settlement;
 use alloy::primitives::{Bytes, U256};
 use anyhow::{bail, Result};
+use crossbook_core::auction::AuctionResult;
 use crossbook_core::types::{Fill as CoreFill, Order as CoreOrder, OrderHash};
 use std::collections::HashMap;
 
@@ -78,6 +79,42 @@ pub fn to_settlement(
         });
     }
     Ok((signed, rows))
+}
+
+/// Build the `settleBatch` arguments from auction results and the admitted orders
+/// they reference. Each auction fill is already one sided and nets to zero across
+/// the pair, so it maps directly to one signed order and one fill row; each pair
+/// contributes its uniform clearing price. Errors if a referenced order is unknown.
+pub fn to_batch_settlement(
+    results: &[AuctionResult],
+    admitted: &HashMap<OrderHash, AdmittedOrder>,
+) -> Result<(
+    Vec<Settlement::SignedOrder>,
+    Vec<Settlement::Fill>,
+    Vec<Settlement::ClearingPrice>,
+)> {
+    let mut index = HashMap::new();
+    let mut signed = Vec::new();
+    let mut rows = Vec::new();
+    let mut prices = Vec::new();
+
+    for r in results {
+        prices.push(Settlement::ClearingPrice {
+            base: r.base,
+            quote: r.quote,
+            num: r.clearing_num,
+            den: r.clearing_den,
+        });
+        for f in &r.fills {
+            let i = index_of(&f.order_hash, &mut index, &mut signed, admitted)?;
+            rows.push(Settlement::Fill {
+                orderIndex: U256::from(i),
+                sellFilled: f.sell_filled,
+                buyFilled: f.buy_filled,
+            });
+        }
+    }
+    Ok((signed, rows, prices))
 }
 
 #[cfg(test)]
