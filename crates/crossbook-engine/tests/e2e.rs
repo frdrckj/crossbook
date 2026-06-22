@@ -370,7 +370,8 @@ async fn batch_flow_settles_at_a_uniform_price() {
 
     // Exactly one pair cleared, so exactly one BatchSettled event, at a one to
     // one uniform price for the full amount.
-    let settlement = CrossbookSettlement::new(d.settlement, &provider_for(SOLVER, &rpc));
+    let reader = provider_for(SOLVER, &rpc);
+    let settlement = CrossbookSettlement::new(d.settlement, &reader);
     let events = settlement
         .BatchSettled_filter()
         .from_block(0)
