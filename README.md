@@ -17,12 +17,17 @@ Funds stay in the trader's wallet until the moment of execution. A maker grants 
 5. The contract checks every signature, nonce, expiry, and limit price again, then atomically pulls each maker's sell token and sends their buy token. It reverts wholesale on any failure, so it never holds inventory.
 6. An indexer reads the resulting events, writes them to Postgres, and pushes updates to WebSocket subscribers.
 
+## Matching modes
+
+Crossbook matches in one of two modes, chosen by config and never both at once. Continuous mode, the default, crosses each order against the book as it arrives at price time priority. Batch mode collects orders over a window and clears each token pair at one uniform price, a call auction in the CoW style, so every order in a pair trades at the same price and a later arrival gets no worse a fill. The contract verifies that single price per pair onchain and emits a settlement event for it. Set `MATCHING_MODE` to continuous or batch and `BATCH_INTERVAL` to the window length in seconds. The clearing algorithm is written up in [docs/architecture.md](docs/architecture.md).
+
 ## Design
 
 - The exchange is noncustodial. Traders never deposit into the engine. They approve the settlement contract once, and it pulls tokens only at execution, the same trust model as CoW Protocol.
 - The matching core is pure and deterministic. A single writer task owns it, and it has no async, no I/O, and no clock, which makes the hot path fast and the whole engine easy to test and replay.
 - The contract does not trust the engine. It independently rechecks signatures, nonces, expiry, and each maker's limit price, so a buggy or malicious matcher cannot move funds against a maker's signed limits.
 - The Rust and Solidity EIP-712 digests are identical, proven by a cross language parity test that gates all settlement work.
+- Two matching modes share one settlement path. Continuous price time priority, or a uniform price batch auction in the CoW style whose single clearing price per pair is enforced onchain, not trusted from the solver.
 - Security is a first class concern. The repo carries property tests, Foundry fuzz and invariant suites, and a threat model rather than treating them as an afterthought.
 
 ## Stack
@@ -54,7 +59,7 @@ just bench      # matching core benchmarks
 
 ## Testing
 
-The matcher is covered by property tests for its invariants (no crossed book, conservation, cumulative limit respect, exact partial fill accounting, and fill or kill), a check of the price math against exact rational arithmetic, a golden replay for determinism, and an assertion that the hot path does not allocate. The settlement contract has a Foundry suite of unit, fuzz, and invariant tests covering every revert path, fee on transfer tokens, reentrancy, and zero inventory. A cross language test proves the Rust and Solidity order digests match byte for byte.
+The matcher is covered by property tests for its invariants (no crossed book, conservation, cumulative limit respect, exact partial fill accounting, and fill or kill), a check of the price math against exact rational arithmetic, a golden replay for determinism, and an assertion that the hot path does not allocate. The batch auction adds property tests for one price per pair, quantity conservation and net to zero, maximal crossable volume, and determinism, a golden coincidence of wants clearing at the midpoint, and a check that the batch captures at least the surplus continuous matching would. The settlement contract has a Foundry suite of unit, fuzz, and invariant tests covering every revert path, fee on transfer tokens, reentrancy, zero inventory, and the onchain uniform price assertion. A cross language test proves the Rust and Solidity order digests match byte for byte.
 
 ## Security
 
