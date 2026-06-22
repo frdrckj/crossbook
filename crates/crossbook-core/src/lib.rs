@@ -10,4 +10,5 @@ pub mod book;
 pub mod eip712;
 pub mod error;
 pub mod price;
+pub mod ring;
 pub mod types;
