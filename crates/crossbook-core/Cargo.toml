@@ -12,8 +12,8 @@ thiserror.workspace = true
 
 [dev-dependencies]
 criterion = "0.8.2"
-num-bigint = "0.4.6"     # cmp_limit oracle
-num-rational = "0.4.2"   # cmp_limit oracle
+num-bigint = "0.4.6"   # cmp_limit oracle
+num-rational = "0.4.2" # cmp_limit oracle
 proptest = "1.11.0"
 
 [[bench]]

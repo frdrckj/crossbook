@@ -9,7 +9,15 @@
 //! is rounded up in its favor. A fill is only produced when it also respects the
 //! taker's signed limit, so a maker whose remaining amount is too small to clear
 //! at a ratio the taker accepts is skipped rather than matched, leaving its dust
-//! to rest. The matcher does no I/O and keeps no clock.
+//! to rest.
+//!
+//! Matching the incoming order only as a taker at resting maker prices is not
+//! quite enough to leave a fixpoint: a resting order can still cross the incoming
+//! order at the incoming order's price, a case integer rounding at the maker price
+//! makes unreachable from the taker side. So once the incoming order would rest,
+//! a maker pass lets any resting order that still crosses it take from it at its
+//! price, which guarantees the book has no crossable fill left. The matcher does
+//! no I/O and keeps no clock.
 
 use crate::price::{self, cmp_limit};
 use crate::types::{Fill, OpenOrder, Order, OrderHash, SubmitOutcome};
@@ -144,21 +152,16 @@ impl OrderBook {
             }
         }
 
-        // Fill or kill: must complete in full or touch nothing.
+        // Fill or kill: must complete in full as a taker or touch nothing.
         if !order.order.partially_fillable && !t_remaining.is_zero() {
             plan.clear();
             self.scratch = plan;
             return SubmitOutcome::Killed;
         }
 
-        if plan.is_empty() {
-            self.scratch = plan;
-            self.insert_resting(order);
-            return SubmitOutcome::Resting;
-        }
-
-        // Phase 2: commit. Consume each planned maker by hash (skipped makers
-        // remain in place, so front popping would not line up).
+        // Phase 2: commit the taker fills. Consume each planned maker by hash
+        // (skipped makers remain in place, so front popping would not line up).
+        let filled_as_taker = !plan.is_empty();
         for (maker_hash, y, x) in &plan {
             self.consume(&opp_key, maker_hash, *y);
             out.push(Fill {
@@ -169,17 +172,63 @@ impl OrderBook {
             });
         }
         plan.clear();
+
+        if t_remaining.is_zero() {
+            self.scratch = plan;
+            return SubmitOutcome::FullyFilled;
+        }
+
+        // Phase 3, maker pass. The order is about to rest, so it becomes a maker.
+        // Resting orders on the opposite side may still cross it at its own price,
+        // a locked cross the taker phase cannot reach because it executes only at
+        // resting maker prices and integer rounding there can tip the fill past
+        // the incoming order's limit. Let those resting orders take from it now, so
+        // the book stays a fixpoint with no crossable fill left.
+        if let Some(side) = self.sides.get(&opp_key) {
+            'maker: for (_p, queue) in side.iter() {
+                for r in queue.iter() {
+                    if t_remaining.is_zero() {
+                        break 'maker;
+                    }
+                    // The incoming order is the maker (remaining t_remaining); the
+                    // resting order r is the taker. Each taker has its own budget,
+                    // so one that cannot take a whole unit is skipped, not a stop.
+                    if let Step::Trade { y, x } =
+                        plan_step(&order.order, t_remaining, &r.order, r.remaining_sell)
+                    {
+                        plan.push((r.hash, y, x));
+                        t_remaining -= y;
+                    }
+                }
+            }
+        }
+        let filled_as_maker = !plan.is_empty();
+        for (taker_hash, y, x) in &plan {
+            // The incoming order (maker) sends `y` of its sell token; the resting
+            // taker pays `x` of its own sell token, which is the maker's buy token.
+            self.consume(&opp_key, taker_hash, *x);
+            out.push(Fill {
+                maker_hash: order.hash,
+                taker_hash: *taker_hash,
+                sell_filled: *y,
+                buy_filled: *x,
+            });
+        }
+        plan.clear();
         self.scratch = plan;
 
         if t_remaining.is_zero() {
-            SubmitOutcome::FullyFilled
-        } else {
-            let mut resting = order;
-            resting.remaining_sell = t_remaining;
-            self.insert_resting(resting);
+            return SubmitOutcome::FullyFilled;
+        }
+        let mut resting = order;
+        resting.remaining_sell = t_remaining;
+        self.insert_resting(resting);
+        if filled_as_taker || filled_as_maker {
             SubmitOutcome::PartiallyFilled {
                 remaining_sell: t_remaining,
             }
+        } else {
+            SubmitOutcome::Resting
         }
     }
 

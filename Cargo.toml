@@ -1,9 +1,9 @@
 [workspace]
 resolver = "2"
 members = [
-    "crates/crossbook-core",
-    "crates/crossbook-engine",
-    "crates/crossbook-cli",
+  "crates/crossbook-core",
+  "crates/crossbook-engine",
+  "crates/crossbook-cli",
 ]
 
 [workspace.package]

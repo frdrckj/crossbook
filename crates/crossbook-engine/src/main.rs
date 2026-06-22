@@ -3,7 +3,8 @@
 
 use anyhow::{Context, Result};
 use crossbook_core::eip712;
-use crossbook_engine::{api, chain::Chain, config::Config, db, engine_task, indexer};
+use crossbook_engine::config::MatchingMode;
+use crossbook_engine::{api, batch, chain::Chain, config::Config, db, engine_task, indexer};
 use metrics_exporter_prometheus::PrometheusBuilder;
 use std::collections::HashMap;
 use std::sync::atomic::AtomicU64;
@@ -29,7 +30,7 @@ async fn main() -> Result<()> {
     let domain = eip712::crossbook_domain(chain_id, cfg.settlement);
     let chain = Arc::new(chain);
 
-    let engine = engine_task::spawn(1024);
+    let engine = engine_task::spawn(1024, cfg.matching_mode);
     let (trades_tx, _) = tokio::sync::broadcast::channel(1024);
 
     tokio::spawn(indexer::run(chain.clone(), db.clone(), trades_tx.clone()));
@@ -41,16 +42,42 @@ async fn main() -> Result<()> {
         token_b: std::env::var("DEMO_TOKEN_B").ok(),
     };
 
+    let admitted = Arc::new(Mutex::new(HashMap::new()));
+    let batch_state = Arc::new(Mutex::new(api::BatchState {
+        mode: match cfg.matching_mode {
+            MatchingMode::Continuous => "continuous".to_string(),
+            MatchingMode::Batch => "batch".to_string(),
+        },
+        interval_secs: cfg.batch_interval.as_secs(),
+        ..Default::default()
+    }));
+
+    if cfg.matching_mode == MatchingMode::Batch {
+        tracing::info!(
+            interval_secs = cfg.batch_interval.as_secs(),
+            "batch mode enabled"
+        );
+        tokio::spawn(batch::run_window(
+            engine.clone(),
+            chain.clone(),
+            admitted.clone(),
+            batch_state.clone(),
+            cfg.batch_interval,
+        ));
+    }
+
     let state = api::AppState {
         engine,
         chain,
         db,
         domain: Arc::new(domain),
-        admitted: Arc::new(Mutex::new(HashMap::new())),
+        admitted,
         seq: Arc::new(AtomicU64::new(0)),
         trades_tx,
         metrics,
         demo,
+        batch: batch_state,
+        mode: cfg.matching_mode,
     };
 
     let listener = tokio::net::TcpListener::bind(cfg.bind)

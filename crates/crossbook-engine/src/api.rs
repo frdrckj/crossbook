@@ -1,9 +1,11 @@
 //! HTTP and WebSocket API.
 
 use crate::chain::Chain;
+use crate::config::MatchingMode;
 use crate::db::{self, StoredOrder, TradeRow};
 use crate::engine_task::EngineHandle;
 use crate::ingest::{self, OrderPayload};
+use crate::reject::RejectReason;
 use crate::settle::{self, AdmittedOrder};
 use alloy_primitives::{Address, B256};
 use alloy_sol_types::Eip712Domain;
@@ -34,6 +36,46 @@ pub struct DemoConfig {
     pub token_b: Option<String>,
 }
 
+/// One pair's clearing in the most recent batch, for the dashboard.
+#[derive(Clone, Serialize)]
+pub struct ClearingView {
+    pub base: String,
+    pub quote: String,
+    pub clearing_num: String,
+    pub clearing_den: String,
+    pub volume_base: String,
+    pub surplus: String,
+    pub fills: usize,
+}
+
+impl From<&crossbook_core::auction::AuctionResult> for ClearingView {
+    fn from(r: &crossbook_core::auction::AuctionResult) -> Self {
+        ClearingView {
+            base: r.base.to_string(),
+            quote: r.quote.to_string(),
+            clearing_num: r.clearing_num.to_string(),
+            clearing_den: r.clearing_den.to_string(),
+            volume_base: r.volume_base.to_string(),
+            surplus: r.surplus.to_string(),
+            fills: r.fills.len(),
+        }
+    }
+}
+
+/// Live view of the batch window, updated by the window driver. In continuous
+/// mode it just reports the mode and stays otherwise empty.
+#[derive(Clone, Serialize, Default)]
+pub struct BatchState {
+    pub mode: String,
+    pub interval_secs: u64,
+    /// Unix seconds when the current window closes (0 in continuous mode).
+    pub window_closes_at: u64,
+    pub last_close_at: u64,
+    pub last_results: Vec<ClearingView>,
+    /// Number of multi token rings cleared in the last window.
+    pub last_rings: u64,
+}
+
 /// Shared engine state. Cheap to clone (everything inside is shared).
 #[derive(Clone)]
 pub struct AppState {
@@ -46,6 +88,8 @@ pub struct AppState {
     pub trades_tx: broadcast::Sender<TradeRow>,
     pub metrics: Arc<PrometheusHandle>,
     pub demo: DemoConfig,
+    pub batch: Arc<Mutex<BatchState>>,
+    pub mode: MatchingMode,
 }
 
 pub fn router(state: AppState) -> Router {
@@ -57,6 +101,7 @@ pub fn router(state: AppState) -> Router {
         .route("/orders", post(post_order))
         .route("/orders/{hash}", get(get_order).delete(cancel_order))
         .route("/book/{base}/{quote}", get(get_book))
+        .route("/batch", get(get_batch))
         .route("/trades", get(get_trades))
         .route("/ws", get(ws_handler))
         .with_state(state)
@@ -68,6 +113,11 @@ async fn index() -> Html<&'static str> {
 
 async fn config(State(st): State<AppState>) -> Json<DemoConfig> {
     Json(st.demo.clone())
+}
+
+async fn get_batch(State(st): State<AppState>) -> Response {
+    let snapshot = st.batch.lock().ok().map(|s| s.clone()).unwrap_or_default();
+    Json(snapshot).into_response()
 }
 
 async fn health() -> &'static str {
@@ -91,21 +141,28 @@ struct Accepted {
     status: String,
 }
 
+/// Turn a rejection into a counted HTTP response, the single place that shape lives.
+fn rejected(reason: RejectReason) -> Response {
+    metrics::counter!("crossbook_orders_rejected_total", "reason" => reason.label()).increment(1);
+    let code = StatusCode::from_u16(reason.http_status()).unwrap_or(StatusCode::BAD_REQUEST);
+    (
+        code,
+        Json(json!({ "error": reason.to_string(), "reason": reason.label() })),
+    )
+        .into_response()
+}
+
 async fn post_order(State(st): State<AppState>, Json(payload): Json<OrderPayload>) -> Response {
+    // A uniform price batch clears in whole lots, so it cannot honor a fill or
+    // kill order's exact amount. Reject it up front in batch mode.
+    if st.mode == MatchingMode::Batch && !payload.partially_fillable {
+        return rejected(RejectReason::FillOrKillNotInBatch);
+    }
+
     let seq = st.seq.fetch_add(1, Ordering::Relaxed);
     let validated = match ingest::validate(&payload, &st.chain, &st.domain, now_secs(), seq).await {
         Ok(v) => v,
-        Err(reason) => {
-            metrics::counter!("crossbook_orders_rejected_total", "reason" => reason.label())
-                .increment(1);
-            let code =
-                StatusCode::from_u16(reason.http_status()).unwrap_or(StatusCode::BAD_REQUEST);
-            return (
-                code,
-                Json(json!({ "error": reason.to_string(), "reason": reason.label() })),
-            )
-                .into_response();
-        }
+        Err(reason) => return rejected(reason),
     };
     metrics::counter!("crossbook_orders_admitted_total").increment(1);
 

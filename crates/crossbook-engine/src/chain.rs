@@ -7,7 +7,7 @@ use alloy::providers::{DynProvider, Provider, ProviderBuilder};
 use alloy::rpc::types::Log;
 use alloy::signers::local::PrivateKeySigner;
 use alloy::sol;
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 
 sol! {
     #[sol(rpc)]
@@ -31,6 +31,12 @@ sol! {
             uint256 sellFilled;
             uint256 buyFilled;
         }
+        struct ClearingPrice {
+            address base;
+            address quote;
+            uint256 num;
+            uint256 den;
+        }
 
         event Trade(
             address indexed maker,
@@ -40,8 +46,16 @@ sol! {
             uint256 buyFilled,
             bytes32 orderHash
         );
+        event BatchSettled(
+            address indexed base,
+            address indexed quote,
+            uint256 clearingNum,
+            uint256 clearingDen,
+            uint256 volumeBase
+        );
 
         function settle(SignedOrder[] orders, Fill[] fills) external;
+        function settleBatch(SignedOrder[] orders, Fill[] fills, ClearingPrice[] prices) external;
         function orderHash(Order order) external view returns (bytes32);
         function filledSell(bytes32 orderHash) external view returns (uint256);
     }
@@ -116,7 +130,8 @@ impl Chain {
             .context("allowance")
     }
 
-    /// Submit a settlement batch and wait for the receipt. Returns the tx hash.
+    /// Submit a settlement batch and wait for the receipt. Returns the tx hash, or
+    /// an error if the transaction reverted on chain.
     pub async fn settle(
         &self,
         orders: Vec<Settlement::SignedOrder>,
@@ -132,6 +147,38 @@ impl Chain {
             .get_receipt()
             .await
             .context("await settle receipt")?;
+        if !receipt.status() {
+            bail!("settle transaction reverted: {}", receipt.transaction_hash);
+        }
+        Ok(receipt.transaction_hash)
+    }
+
+    /// Submit a batch settlement at a uniform price per pair and wait for the
+    /// receipt. The contract asserts every fill in a pair trades at its clearing
+    /// price and emits a BatchSettled event per pair. Returns the tx hash, or an
+    /// error if the transaction reverted on chain.
+    pub async fn settle_batch(
+        &self,
+        orders: Vec<Settlement::SignedOrder>,
+        fills: Vec<Settlement::Fill>,
+        prices: Vec<Settlement::ClearingPrice>,
+    ) -> Result<B256> {
+        let contract = Settlement::new(self.settlement, &self.provider);
+        let pending = contract
+            .settleBatch(orders, fills, prices)
+            .send()
+            .await
+            .context("send settleBatch tx")?;
+        let receipt = pending
+            .get_receipt()
+            .await
+            .context("await settleBatch receipt")?;
+        if !receipt.status() {
+            bail!(
+                "settleBatch transaction reverted: {}",
+                receipt.transaction_hash
+            );
+        }
         Ok(receipt.transaction_hash)
     }
 

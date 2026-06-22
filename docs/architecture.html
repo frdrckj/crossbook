@@ -74,12 +74,12 @@
           <div class="line"><span class="k">ingest:</span> recover</div>
           <div class="line">sig, expiry,</div>
           <div class="line">balance, allowance</div>
-          <div class="line"><span class="k">match:</span> price then</div>
-          <div class="line">time, one writer</div>
-          <div class="line"><span class="k">settle:</span> build batch</div>
+          <div class="line"><span class="k">match:</span> continuous</div>
+          <div class="line">or batch auction</div>
+          <div class="line"><span class="k">settle:</span> pairs + rings</div>
         </div>
 
-        <div class="conn bound"><div class="lab">settle()<br />tx</div><div class="arr">&rarr;</div></div>
+        <div class="conn bound"><div class="lab">settle()<br />or batch</div><div class="arr">&rarr;</div></div>
 
         <div class="card chain">
           <div class="h"><b>Settlement</b><span class="where">on chain</span></div>
@@ -122,11 +122,11 @@
 
       <div class="callout">
         <b>Trust boundary</b>
-        <p>The settlement contract does not trust the engine. It re-verifies every signature, expiry, fill, and limit price on chain, so a buggy or malicious matcher can never move funds against a maker's signed limit.</p>
+        <p>The settlement contract does not trust the engine. It re-verifies every signature, expiry, fill, and limit price on chain, so a buggy or malicious matcher can never move funds against a maker's signed limit. In batch mode it also asserts one uniform price per token pair, and it clears three token rings that net to zero across the cycle.</p>
       </div>
 
       <div class="foot">
-        <span>property tests &middot; EIP-712 parity gate &middot; Foundry fuzz + invariant &middot; PoC threat model &middot; end to end on Anvil + Postgres</span>
+        <span>property tests &middot; EIP-712 parity gate &middot; Foundry fuzz + invariant &middot; differential fuzz &middot; PoC threat model &middot; end to end on Anvil</span>
         <span>github.com/frdrckj/crossbook</span>
       </div>
     </div>

@@ -53,6 +53,35 @@ pub(crate) fn cap_floor(a: U256, b: U256, d: U256, cap: U256) -> U256 {
     narrow(if q < cap512 { q } else { cap512 })
 }
 
+/// Greatest common divisor (Euclid).
+pub(crate) fn gcd(mut a: U256, mut b: U256) -> U256 {
+    while !b.is_zero() {
+        let t = a % b;
+        a = b;
+        b = t;
+    }
+    a
+}
+
+/// Reduce the ratio `num/den` to lowest terms. Caller guarantees `den > 0`.
+pub(crate) fn reduce(num: U256, den: U256) -> (U256, U256) {
+    if num.is_zero() {
+        return (U256::ZERO, U256::from(1u64));
+    }
+    let g = gcd(num, den);
+    (num / g, den / g)
+}
+
+/// Midpoint of two ratios `an/ad` and `bn/bd`, reduced to lowest terms. Returns
+/// None if the intermediate arithmetic would exceed 256 bits, which only happens
+/// for extreme inputs; callers fall back to a representable in range price.
+pub(crate) fn midpoint(an: U256, ad: U256, bn: U256, bd: U256) -> Option<(U256, U256)> {
+    // (an/ad + bn/bd) / 2 = (an*bd + bn*ad) / (2*ad*bd)
+    let num = an.checked_mul(bd)?.checked_add(bn.checked_mul(ad)?)?;
+    let den = ad.checked_mul(bd)?.checked_mul(U256::from(2u64))?;
+    Some(reduce(num, den))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -102,5 +131,24 @@ mod tests {
         let max = U256::MAX;
         // floor(max*max/1) is ~2^512; capped to max must not overflow.
         assert_eq!(cap_floor(max, max, u(1), max), max);
+    }
+
+    #[test]
+    fn gcd_and_reduce() {
+        assert_eq!(gcd(u(12), u(8)), u(4));
+        assert_eq!(gcd(u(7), u(5)), u(1));
+        assert_eq!(gcd(u(9), u(0)), u(9));
+        assert_eq!(reduce(u(6), u(4)), (u(3), u(2)));
+        assert_eq!(reduce(u(0), u(5)), (u(0), u(1)));
+    }
+
+    #[test]
+    fn midpoint_of_two_ratios() {
+        // (2/1 + 9/5) / 2 = 19/10
+        assert_eq!(midpoint(u(2), u(1), u(9), u(5)), Some((u(19), u(10))));
+        // (1/1 + 1/1) / 2 = 1/1
+        assert_eq!(midpoint(u(1), u(1), u(1), u(1)), Some((u(1), u(1))));
+        // overflow guard
+        assert_eq!(midpoint(U256::MAX, u(1), U256::MAX, u(1)), None);
     }
 }

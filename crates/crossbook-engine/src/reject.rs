@@ -22,13 +22,15 @@ pub enum RejectReason {
     UnknownPair,
     #[error("unsupported token")]
     UnsupportedToken,
+    #[error("fill or kill orders are not supported in batch mode")]
+    FillOrKillNotInBatch,
     #[error("malformed order")]
     Malformed,
 }
 
 impl RejectReason {
     /// Every variant, for tests and for registering the metric label set.
-    pub const ALL: [RejectReason; 9] = [
+    pub const ALL: [RejectReason; 10] = [
         RejectReason::BadSignature,
         RejectReason::Expired,
         RejectReason::Cancelled,
@@ -37,6 +39,7 @@ impl RejectReason {
         RejectReason::InsufficientAllowance,
         RejectReason::UnknownPair,
         RejectReason::UnsupportedToken,
+        RejectReason::FillOrKillNotInBatch,
         RejectReason::Malformed,
     ];
 
@@ -52,6 +55,7 @@ impl RejectReason {
             RejectReason::InsufficientAllowance => "insufficient_allowance",
             RejectReason::UnknownPair => "unknown_pair",
             RejectReason::UnsupportedToken => "unsupported_token",
+            RejectReason::FillOrKillNotInBatch => "fok_not_in_batch",
             RejectReason::Malformed => "malformed",
         }
     }
@@ -61,6 +65,7 @@ impl RejectReason {
         match self {
             RejectReason::BadSignature | RejectReason::Malformed => 400,
             RejectReason::UnknownPair | RejectReason::UnsupportedToken => 400,
+            RejectReason::FillOrKillNotInBatch => 400,
             RejectReason::Expired | RejectReason::Cancelled | RejectReason::Overfill => 409,
             RejectReason::InsufficientBalance | RejectReason::InsufficientAllowance => 422,
         }

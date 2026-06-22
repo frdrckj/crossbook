@@ -1,6 +1,7 @@
-//! End to end: deploy the contracts and two tokens on Anvil, start the engine,
-//! post two signed orders that cross over HTTP, and assert the batch settles on
-//! chain, lands in Postgres, and is broadcast to subscribers.
+//! End to end against Anvil and Postgres: deploy the contracts and two tokens,
+//! start the engine, post signed orders over HTTP, and assert they settle on
+//! chain, land in Postgres, and are broadcast to subscribers. One test exercises
+//! the continuous path, the other the batch auction path.
 //!
 //! Gated behind the `e2e` feature because it reads compiled contract artifacts.
 //! Requires a running Anvil (RPC_URL) and Postgres (DATABASE_URL). Run it with
@@ -8,15 +9,16 @@
 #![cfg(feature = "e2e")]
 
 use alloy::network::EthereumWallet;
-use alloy::primitives::{Bytes, U256};
+use alloy::primitives::{Address, Bytes, U256};
 use alloy::providers::{Provider, ProviderBuilder};
 use alloy::signers::local::PrivateKeySigner;
 use alloy::signers::SignerSync;
 use alloy::sol;
 use crossbook_core::eip712;
 use crossbook_core::types::Order;
+use crossbook_engine::config::MatchingMode;
 use crossbook_engine::ingest::OrderPayload;
-use crossbook_engine::{api, chain::Chain, db, engine_task, indexer};
+use crossbook_engine::{api, batch, chain::Chain, db, engine_task, indexer};
 use std::collections::HashMap;
 use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, Mutex};
@@ -65,20 +67,23 @@ fn sign_payload(key: &str, order: &Order, domain: &alloy_sol_types::Eip712Domain
     }
 }
 
-#[tokio::test]
-async fn full_flow_settles_indexes_and_broadcasts() {
-    let (Ok(rpc), Ok(database_url)) = (std::env::var("RPC_URL"), std::env::var("DATABASE_URL"))
-    else {
-        eprintln!("skipping e2e: set RPC_URL and DATABASE_URL (just dev)");
-        return;
-    };
+/// What `deploy_and_fund` hands back: the deployed addresses and the matching
+/// EIP-712 domain. Providers are cheap, so callers rebuild them from keys.
+struct Deployed {
+    ta: Address,
+    tb: Address,
+    settlement: Address,
+    domain: alloy_sol_types::Eip712Domain,
+}
 
+/// Deploy two tokens and the settlement contract, fund and approve both makers,
+/// and clear the engine tables. Shared by both flows.
+async fn deploy_and_fund(rpc: &str, database_url: &str) -> Deployed {
     let solver_signer: PrivateKeySigner = SOLVER.parse().unwrap();
     let maker_a: PrivateKeySigner = MAKER_A.parse().unwrap();
     let maker_b: PrivateKeySigner = MAKER_B.parse().unwrap();
 
-    // Deploy two tokens and the settlement contract.
-    let deployer = provider_for(SOLVER, &rpc);
+    let deployer = provider_for(SOLVER, rpc);
     let token_a = MockERC20::deploy(&deployer, "TokenA".into(), "A".into())
         .await
         .unwrap();
@@ -92,7 +97,6 @@ async fn full_flow_settles_indexes_and_broadcasts() {
     let tb = *token_b.address();
     let settlement_addr = *settlement.address();
 
-    // Fund and approve both makers.
     let amt = U256::from(AMT);
     token_a
         .mint(maker_a.address(), amt)
@@ -110,7 +114,7 @@ async fn full_flow_settles_indexes_and_broadcasts() {
         .get_receipt()
         .await
         .unwrap();
-    MockERC20::new(ta, &provider_for(MAKER_A, &rpc))
+    MockERC20::new(ta, &provider_for(MAKER_A, rpc))
         .approve(settlement_addr, U256::MAX)
         .send()
         .await
@@ -118,7 +122,7 @@ async fn full_flow_settles_indexes_and_broadcasts() {
         .get_receipt()
         .await
         .unwrap();
-    MockERC20::new(tb, &provider_for(MAKER_B, &rpc))
+    MockERC20::new(tb, &provider_for(MAKER_B, rpc))
         .approve(settlement_addr, U256::MAX)
         .send()
         .await
@@ -127,22 +131,108 @@ async fn full_flow_settles_indexes_and_broadcasts() {
         .await
         .unwrap();
 
-    // Engine state.
-    let pool = db::connect(&database_url).await.unwrap();
+    let pool = db::connect(database_url).await.unwrap();
     for table in ["trades", "orders", "indexer_cursor"] {
         sqlx::query(&format!("DELETE FROM {table}"))
             .execute(&pool)
             .await
             .unwrap();
     }
+
+    let chain_id = deployer.get_chain_id().await.unwrap();
+    let domain = eip712::crossbook_domain(chain_id, settlement_addr);
+    Deployed {
+        ta,
+        tb,
+        settlement: settlement_addr,
+        domain,
+    }
+}
+
+/// The two offsetting orders both flows use: A sells ta for tb, B sells tb for
+/// ta, equal amounts, so they cross one to one.
+fn offsetting_orders(d: &Deployed) -> (OrderPayload, OrderPayload) {
+    let maker_a: PrivateKeySigner = MAKER_A.parse().unwrap();
+    let maker_b: PrivateKeySigner = MAKER_B.parse().unwrap();
+    let amt = U256::from(AMT);
+    let order_a = Order {
+        maker: maker_a.address(),
+        sell_token: d.ta,
+        buy_token: d.tb,
+        sell_amount: amt,
+        buy_amount: amt,
+        valid_to: VALID_TO,
+        nonce: U256::from(1u64),
+        partially_fillable: true,
+    };
+    let order_b = Order {
+        maker: maker_b.address(),
+        sell_token: d.tb,
+        buy_token: d.ta,
+        sell_amount: amt,
+        buy_amount: amt,
+        valid_to: VALID_TO,
+        nonce: U256::from(1u64),
+        partially_fillable: true,
+    };
+    (
+        sign_payload(MAKER_A, &order_a, &d.domain),
+        sign_payload(MAKER_B, &order_b, &d.domain),
+    )
+}
+
+async fn post_order(http: &reqwest::Client, base: &str, payload: &OrderPayload, label: &str) {
+    let r = http
+        .post(format!("{base}/orders"))
+        .json(payload)
+        .send()
+        .await
+        .unwrap();
+    assert!(
+        r.status().is_success(),
+        "post {label} failed: {}",
+        r.text().await.unwrap()
+    );
+}
+
+async fn poll_trades_indexed(http: &reqwest::Client, base: &str, d: &Deployed) -> bool {
+    for _ in 0..30 {
+        let body: serde_json::Value = http
+            .get(format!(
+                "{base}/trades?base={}&quote={}&limit=10",
+                d.ta, d.tb
+            ))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        if body.as_array().map(|a| !a.is_empty()).unwrap_or(false) {
+            return true;
+        }
+        tokio::time::sleep(Duration::from_millis(500)).await;
+    }
+    false
+}
+
+#[tokio::test]
+async fn continuous_flow_settles_indexes_and_broadcasts() {
+    let (Ok(rpc), Ok(database_url)) = (std::env::var("RPC_URL"), std::env::var("DATABASE_URL"))
+    else {
+        eprintln!("skipping e2e: set RPC_URL and DATABASE_URL (just dev)");
+        return;
+    };
+    let d = deploy_and_fund(&rpc, &database_url).await;
+    let pool = db::connect(&database_url).await.unwrap();
     let chain = Arc::new(
-        Chain::connect(&rpc, SOLVER.parse().unwrap(), settlement_addr)
+        Chain::connect(&rpc, SOLVER.parse().unwrap(), d.settlement)
             .await
             .unwrap(),
     );
     let chain_id = chain.chain_id().await.unwrap();
-    let domain = eip712::crossbook_domain(chain_id, settlement_addr);
-    let engine = engine_task::spawn(256);
+
+    let engine = engine_task::spawn(256, MatchingMode::Continuous);
     let (trades_tx, mut ws_rx) = {
         let (tx, _) = tokio::sync::broadcast::channel(256);
         let rx = tx.subscribe();
@@ -153,24 +243,25 @@ async fn full_flow_settles_indexes_and_broadcasts() {
             .build_recorder()
             .handle(),
     );
-
     tokio::spawn(indexer::run(chain.clone(), pool.clone(), trades_tx.clone()));
 
     let state = api::AppState {
         engine,
         chain,
         db: pool.clone(),
-        domain: Arc::new(domain.clone()),
+        domain: Arc::new(d.domain.clone()),
         admitted: Arc::new(Mutex::new(HashMap::new())),
         seq: Arc::new(AtomicU64::new(0)),
         trades_tx,
         metrics,
         demo: api::DemoConfig {
             chain_id,
-            settlement: settlement_addr.to_string(),
-            token_a: Some(ta.to_string()),
-            token_b: Some(tb.to_string()),
+            settlement: d.settlement.to_string(),
+            token_a: Some(d.ta.to_string()),
+            token_b: Some(d.tb.to_string()),
         },
+        batch: Arc::new(Mutex::new(api::BatchState::default())),
+        mode: MatchingMode::Continuous,
     };
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
@@ -178,88 +269,146 @@ async fn full_flow_settles_indexes_and_broadcasts() {
         axum::serve(listener, api::router(state)).await.unwrap();
     });
 
-    // Two crossing orders.
-    let order_a = Order {
-        maker: maker_a.address(),
-        sell_token: ta,
-        buy_token: tb,
-        sell_amount: amt,
-        buy_amount: amt,
-        valid_to: VALID_TO,
-        nonce: U256::from(1u64),
-        partially_fillable: true,
-    };
-    let order_b = Order {
-        maker: maker_b.address(),
-        sell_token: tb,
-        buy_token: ta,
-        sell_amount: amt,
-        buy_amount: amt,
-        valid_to: VALID_TO,
-        nonce: U256::from(1u64),
-        partially_fillable: true,
-    };
-    let payload_a = sign_payload(MAKER_A, &order_a, &domain);
-    let payload_b = sign_payload(MAKER_B, &order_b, &domain);
-
+    let (payload_a, payload_b) = offsetting_orders(&d);
     let http = reqwest::Client::new();
     let base = format!("http://{addr}");
+    post_order(&http, &base, &payload_a, "A").await;
+    post_order(&http, &base, &payload_b, "B").await;
 
-    let r1 = http
-        .post(format!("{base}/orders"))
-        .json(&payload_a)
-        .send()
-        .await
-        .unwrap();
     assert!(
-        r1.status().is_success(),
-        "post A failed: {}",
-        r1.text().await.unwrap()
+        poll_trades_indexed(&http, &base, &d).await,
+        "trade was not indexed within the timeout"
     );
 
-    let r2 = http
-        .post(format!("{base}/orders"))
-        .json(&payload_b)
-        .send()
-        .await
-        .unwrap();
-    assert!(
-        r2.status().is_success(),
-        "post B failed: {}",
-        r2.text().await.unwrap()
-    );
-
-    // Poll the trades endpoint until the settlement is indexed.
-    let mut indexed = false;
-    for _ in 0..30 {
-        let body: serde_json::Value = http
-            .get(format!("{base}/trades?base={ta}&quote={tb}&limit=10"))
-            .send()
-            .await
-            .unwrap()
-            .json()
-            .await
-            .unwrap();
-        if body.as_array().map(|a| !a.is_empty()).unwrap_or(false) {
-            indexed = true;
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(500)).await;
-    }
-    assert!(indexed, "trade was not indexed within the timeout");
-
-    // The trade was broadcast to subscribers.
     let broadcast = tokio::time::timeout(Duration::from_secs(5), ws_rx.recv()).await;
     assert!(
         broadcast.is_ok() && broadcast.unwrap().is_ok(),
         "no trade broadcast"
     );
 
-    // On chain, maker A received token B.
-    let bal = MockERC20::new(tb, &deployer)
+    let maker_a: PrivateKeySigner = MAKER_A.parse().unwrap();
+    let bal = MockERC20::new(d.tb, &provider_for(SOLVER, &rpc))
         .balanceOf(maker_a.address())
         .call()
         .await
         .unwrap();
-    assert_eq!(bal, amt, "maker A should have received token B");
+    assert_eq!(bal, U256::from(AMT), "maker A should have received token B");
+}
+
+#[tokio::test]
+async fn batch_flow_settles_at_a_uniform_price() {
+    let (Ok(rpc), Ok(database_url)) = (std::env::var("RPC_URL"), std::env::var("DATABASE_URL"))
+    else {
+        eprintln!("skipping e2e: set RPC_URL and DATABASE_URL (just dev)");
+        return;
+    };
+    let d = deploy_and_fund(&rpc, &database_url).await;
+    let pool = db::connect(&database_url).await.unwrap();
+    let chain = Arc::new(
+        Chain::connect(&rpc, SOLVER.parse().unwrap(), d.settlement)
+            .await
+            .unwrap(),
+    );
+    let chain_id = chain.chain_id().await.unwrap();
+
+    let engine = engine_task::spawn(256, MatchingMode::Batch);
+    let (trades_tx, _) = tokio::sync::broadcast::channel(256);
+    let metrics = Arc::new(
+        metrics_exporter_prometheus::PrometheusBuilder::new()
+            .build_recorder()
+            .handle(),
+    );
+    let admitted = Arc::new(Mutex::new(HashMap::new()));
+    let batch_state = Arc::new(Mutex::new(api::BatchState {
+        mode: "batch".to_string(),
+        interval_secs: 1,
+        ..Default::default()
+    }));
+
+    tokio::spawn(indexer::run(chain.clone(), pool.clone(), trades_tx.clone()));
+    tokio::spawn(batch::run_window(
+        engine.clone(),
+        chain.clone(),
+        admitted.clone(),
+        batch_state.clone(),
+        Duration::from_secs(1),
+    ));
+
+    let state = api::AppState {
+        engine,
+        chain: chain.clone(),
+        db: pool.clone(),
+        domain: Arc::new(d.domain.clone()),
+        admitted,
+        seq: Arc::new(AtomicU64::new(0)),
+        trades_tx,
+        metrics,
+        demo: api::DemoConfig {
+            chain_id,
+            settlement: d.settlement.to_string(),
+            token_a: Some(d.ta.to_string()),
+            token_b: Some(d.tb.to_string()),
+        },
+        batch: batch_state,
+        mode: MatchingMode::Batch,
+    };
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, api::router(state)).await.unwrap();
+    });
+
+    let (payload_a, payload_b) = offsetting_orders(&d);
+    let http = reqwest::Client::new();
+    let base = format!("http://{addr}");
+    post_order(&http, &base, &payload_a, "A").await;
+    post_order(&http, &base, &payload_b, "B").await;
+
+    // The window driver clears and settles within a couple of intervals.
+    assert!(
+        poll_trades_indexed(&http, &base, &d).await,
+        "batch trade was not indexed within the timeout"
+    );
+
+    // Exactly one pair cleared, so exactly one BatchSettled event, at a one to
+    // one uniform price for the full amount.
+    let reader = provider_for(SOLVER, &rpc);
+    let settlement = CrossbookSettlement::new(d.settlement, &reader);
+    let events = settlement
+        .BatchSettled_filter()
+        .from_block(0)
+        .query()
+        .await
+        .unwrap();
+    assert_eq!(events.len(), 1, "expected exactly one BatchSettled event");
+    let (ev, _) = &events[0];
+    assert_eq!(ev.clearingNum, ev.clearingDen, "price should be one to one");
+    assert_eq!(ev.volumeBase, U256::from(AMT), "full amount should clear");
+
+    // The dashboard endpoint reflects the clearing.
+    let batch_view: serde_json::Value = http
+        .get(format!("{base}/batch"))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(batch_view["mode"], "batch");
+    assert!(
+        batch_view["last_results"]
+            .as_array()
+            .map(|a| !a.is_empty())
+            .unwrap_or(false),
+        "dashboard should show the last batch results"
+    );
+
+    // On chain, maker A received token B at the uniform price.
+    let maker_a: PrivateKeySigner = MAKER_A.parse().unwrap();
+    let bal = MockERC20::new(d.tb, &provider_for(SOLVER, &rpc))
+        .balanceOf(maker_a.address())
+        .call()
+        .await
+        .unwrap();
+    assert_eq!(bal, U256::from(AMT), "maker A should have received token B");
 }

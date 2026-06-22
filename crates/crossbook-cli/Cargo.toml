@@ -13,12 +13,15 @@ serde_json = { workspace = true }
 crossbook-core = { path = "../crossbook-core" }
 alloy-primitives = { version = "1.6.0", features = ["serde"] }
 clap = { version = "4", features = ["derive", "env"] }
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+reqwest = { version = "0.12", default-features = false, features = [
+  "json",
+  "rustls-tls",
+] }
 alloy = { version = "1", default-features = false, features = [
-    "provider-http",
-    "signer-local",
-    "network",
-    "contract",
-    "sol-types",
-    "reqwest-rustls-tls",
+  "provider-http",
+  "signer-local",
+  "network",
+  "contract",
+  "sol-types",
+  "reqwest-rustls-tls",
 ] }
