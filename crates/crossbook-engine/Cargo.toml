@@ -15,23 +15,23 @@ alloy-sol-types = "1.6.0"
 serde = { workspace = true }
 serde_json = { workspace = true }
 alloy = { version = "1", default-features = false, features = [
-    "std",
-    "provider-http",
-    "signer-local",
-    "network",
-    "contract",
-    "sol-types",
-    "rpc-types-eth",
-    "reqwest-rustls-tls",
+  "std",
+  "provider-http",
+  "signer-local",
+  "network",
+  "contract",
+  "sol-types",
+  "rpc-types-eth",
+  "reqwest-rustls-tls",
 ] }
 sqlx = { version = "0.8", default-features = false, features = [
-    "runtime-tokio",
-    "tls-rustls",
-    "postgres",
-    "macros",
-    "migrate",
-    "bigdecimal",
-    "chrono",
+  "runtime-tokio",
+  "tls-rustls",
+  "postgres",
+  "macros",
+  "migrate",
+  "bigdecimal",
+  "chrono",
 ] }
 axum = { version = "0.8.9", features = ["ws"] }
 tower-http = { version = "0.7.0", features = ["trace"] }
@@ -47,4 +47,7 @@ futures-util = "0.3.32"
 e2e = []
 
 [dev-dependencies]
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+reqwest = { version = "0.12", default-features = false, features = [
+  "json",
+  "rustls-tls",
+] }

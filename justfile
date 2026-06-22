@@ -8,17 +8,24 @@ check: fmt-check clippy test forge-test
 
 fmt:
     cargo fmt --all
+    taplo fmt
     cd contracts && forge fmt
 
 fmt-check:
     cargo fmt --all -- --check
+    taplo fmt --check
     cd contracts && forge fmt --check
+
+# Format the Cargo and other TOML manifests with taplo.
+fmt-toml:
+    taplo fmt
 
 clippy:
     cargo clippy --workspace --all-targets -- -D warnings
 
 test:
-    cargo test --workspace
+    cargo nextest run --workspace
+    cargo test --workspace --doc
 
 forge-test:
     cd contracts && forge test

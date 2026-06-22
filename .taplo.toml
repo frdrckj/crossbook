@@ -1,0 +1,2 @@
+# Only format our own manifests. Vendored Foundry submodules are left untouched.
+exclude = ["contracts/lib/**", "**/target/**"]
