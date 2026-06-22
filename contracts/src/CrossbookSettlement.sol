@@ -10,7 +10,7 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 import {Order, OrderLib} from "./libraries/OrderLib.sol";
-import {ISettlement, SignedOrder, Fill} from "./interfaces/ISettlement.sol";
+import {ISettlement, SignedOrder, Fill, ClearingPrice} from "./interfaces/ISettlement.sol";
 
 /// @title CrossbookSettlement
 /// @notice Allowance pull settlement for signed intents. The contract does not
@@ -40,6 +40,8 @@ contract CrossbookSettlement is ISettlement, EIP712, ReentrancyGuard, Ownable, P
     error LimitPriceViolated();
     error InventoryNotZero(address token);
     error NotMaker();
+    error ClearingPriceMissing();
+    error UniformPriceViolated();
 
     modifier onlySolver() {
         if (msg.sender != solver) revert NotSolver();
@@ -83,6 +85,27 @@ contract CrossbookSettlement is ISettlement, EIP712, ReentrancyGuard, Ownable, P
         whenNotPaused
         nonReentrant
     {
+        _settle(orders, fills);
+    }
+
+    /// @inheritdoc ISettlement
+    function settleBatch(
+        SignedOrder[] calldata orders,
+        Fill[] calldata fills,
+        ClearingPrice[] calldata prices
+    ) external onlySolver whenNotPaused nonReentrant {
+        // Enforce the uniform price before moving any funds: every fill in a pair
+        // must trade at exactly that pair's clearing price. This is what makes the
+        // batch a real call auction rather than a relabelled continuous settle.
+        _assertUniformPrice(orders, fills, prices);
+        _settle(orders, fills);
+        for (uint256 k = 0; k < prices.length; k++) {
+            ClearingPrice calldata p = prices[k];
+            emit BatchSettled(p.base, p.quote, p.num, p.den, _volumeBase(p, orders, fills));
+        }
+    }
+
+    function _settle(SignedOrder[] calldata orders, Fill[] calldata fills) private {
         uint256 nFills = fills.length;
 
         // Verify every order once and cache its hash.
@@ -182,6 +205,72 @@ contract CrossbookSettlement is ISettlement, EIP712, ReentrancyGuard, Ownable, P
             let mm := mulmod(a, b, not(0))
             lo := mul(a, b)
             hi := sub(sub(mm, lo), lt(mm, lo))
+        }
+    }
+
+    /// @dev Returns `a*b == c*d` using full 512 bit products, exact and overflow
+    /// safe. Used to check a fill executes at exactly the clearing ratio.
+    function _eq512(uint256 a, uint256 b, uint256 c, uint256 d) private pure returns (bool) {
+        (uint256 hi1, uint256 lo1) = _mul512(a, b);
+        (uint256 hi2, uint256 lo2) = _mul512(c, d);
+        return hi1 == hi2 && lo1 == lo2;
+    }
+
+    /// @dev Every fill must trade at its pair's uniform clearing price p = num/den
+    /// (quote per base). An order selling the base settles at buyFilled/sellFilled
+    /// == p; one selling the quote at sellFilled/buyFilled == p. Reverts if a fill
+    /// has no matching price entry or deviates from it.
+    function _assertUniformPrice(
+        SignedOrder[] calldata orders,
+        Fill[] calldata fills,
+        ClearingPrice[] calldata prices
+    ) private pure {
+        for (uint256 j = 0; j < fills.length; j++) {
+            Fill calldata f = fills[j];
+            Order calldata o = orders[f.orderIndex].order;
+            ClearingPrice calldata p = _priceFor(prices, o.sellToken, o.buyToken);
+            if (o.sellToken == p.base) {
+                // Ask: sells base, receives quote. buyFilled/sellFilled == num/den.
+                if (!_eq512(f.buyFilled, p.den, f.sellFilled, p.num)) {
+                    revert UniformPriceViolated();
+                }
+            } else {
+                // Bid: sells quote, receives base. sellFilled/buyFilled == num/den.
+                if (!_eq512(f.sellFilled, p.den, f.buyFilled, p.num)) {
+                    revert UniformPriceViolated();
+                }
+            }
+        }
+    }
+
+    /// @dev Find the clearing price for the unordered pair {x, y}. Reverts if it
+    /// was not supplied. The price list is one entry per pair, so it is short.
+    function _priceFor(ClearingPrice[] calldata prices, address x, address y)
+        private
+        pure
+        returns (ClearingPrice calldata)
+    {
+        for (uint256 k = 0; k < prices.length; k++) {
+            ClearingPrice calldata p = prices[k];
+            if ((p.base == x && p.quote == y) || (p.base == y && p.quote == x)) {
+                return p;
+            }
+        }
+        revert ClearingPriceMissing();
+    }
+
+    /// @dev Total base volume cleared in a pair: the base sold by its asks (orders
+    /// whose sellToken is the base). Reported in the BatchSettled event.
+    function _volumeBase(
+        ClearingPrice calldata p,
+        SignedOrder[] calldata orders,
+        Fill[] calldata fills
+    ) private pure returns (uint256 volume) {
+        for (uint256 j = 0; j < fills.length; j++) {
+            Fill calldata f = fills[j];
+            if (orders[f.orderIndex].order.sellToken == p.base) {
+                volume += f.sellFilled;
+            }
         }
     }
 }
