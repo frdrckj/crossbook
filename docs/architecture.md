@@ -53,3 +53,13 @@ It is worth being precise about what this does and does not guarantee. The chain
 ### How it runs in the engine
 
 In batch mode the single writer task buffers admitted orders instead of crossing them. A window driver closes the window on the interval, asks the core to clear the buffer, advances each order's remaining amount, and submits one `settleBatch` for the whole batch. Settlement emits the same Trade events the indexer already reads, so the read and feed paths are identical to continuous mode. The window countdown, the collected orders, and the last clearing per pair are exposed at `/batch` for the dashboard.
+
+## Ring trades
+
+A pair auction matches a buyer of a token directly against a seller of the same token. A ring goes one hop further. Three orders that each sell one token and buy the next form a cycle, A to B to C and back to A, and they can all trade with no external liquidity even though no two of them share a pair. That is the multi token coincidence of wants an order book cannot express, and it is what CoW is known for.
+
+The condition for a ring to clear is simple: written as buy over sell, the product of the three limits must be at most one. Then value can flow around the cycle and return without leaking. Clearing it with exact integers is the careful part. With each limit reduced to lowest terms and a scale `t`, the core sets `x_A = s1 s2 t`, `x_B = b1 s2 t`, `x_C = b1 b2 t`. The first two orders then trade exactly at their limits, the closing order clears its own limit precisely when the ring is profitable and keeps the surplus, and every token nets to zero because the amount each order sells is the amount the next order in the cycle buys. Splitting the surplus evenly across the ring would need a cube root, so it is left on the closing order for now.
+
+Because a ring already nets to zero across its tokens and every fill respects its maker's limit, it needs nothing new on chain: it settles through the plain `settle` entrypoint, whose net flow and per maker limit checks are exactly what a ring satisfies. The global, rather than per pair, net flow check is what makes this work for three tokens at once. In batch mode the window driver clears pairs first, then extracts profitable rings from what the pairs left behind, and settles the rings in one `settle` call beside the pairs' `settleBatch`. The ring matcher is pure and lives in `crossbook-core/ring.rs`, with a golden coincidence of wants and a property test over random cycles for net to zero, limits, and determinism.
+
+The current scope is a single three token ring per search, extracted repeatedly within a window. Longer rings and a welfare maximizing multi token clearing (the general solver problem) are a deliberate next step, not part of this build.
