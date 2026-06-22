@@ -53,8 +53,10 @@ interface ISettlement {
 
     /// @notice Like settle, but additionally asserts that every fill in a token
     /// pair executes at that pair's single uniform clearing price, then emits a
-    /// BatchSettled event per pair. The batch auction's correctness is enforced on
-    /// chain, not merely trusted from the solver.
+    /// BatchSettled event per pair. What the chain enforces is exactly: one price
+    /// per pair, plus settle's per maker limit, signature, expiry, fill bound, and
+    /// net zero checks. The centrality of that price (the midpoint) and the volume
+    /// maximality are off chain solver properties, not enforced here.
     function settleBatch(
         SignedOrder[] calldata orders,
         Fill[] calldata fills,

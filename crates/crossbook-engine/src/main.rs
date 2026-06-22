@@ -77,6 +77,7 @@ async fn main() -> Result<()> {
         metrics,
         demo,
         batch: batch_state,
+        mode: cfg.matching_mode,
     };
 
     let listener = tokio::net::TcpListener::bind(cfg.bind)

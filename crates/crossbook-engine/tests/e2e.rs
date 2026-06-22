@@ -261,6 +261,7 @@ async fn continuous_flow_settles_indexes_and_broadcasts() {
             token_b: Some(d.tb.to_string()),
         },
         batch: Arc::new(Mutex::new(api::BatchState::default())),
+        mode: MatchingMode::Continuous,
     };
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
@@ -349,6 +350,7 @@ async fn batch_flow_settles_at_a_uniform_price() {
             token_b: Some(d.tb.to_string()),
         },
         batch: batch_state,
+        mode: MatchingMode::Batch,
     };
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();

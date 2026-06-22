@@ -1,9 +1,11 @@
 //! HTTP and WebSocket API.
 
 use crate::chain::Chain;
+use crate::config::MatchingMode;
 use crate::db::{self, StoredOrder, TradeRow};
 use crate::engine_task::EngineHandle;
 use crate::ingest::{self, OrderPayload};
+use crate::reject::RejectReason;
 use crate::settle::{self, AdmittedOrder};
 use alloy_primitives::{Address, B256};
 use alloy_sol_types::Eip712Domain;
@@ -85,6 +87,7 @@ pub struct AppState {
     pub metrics: Arc<PrometheusHandle>,
     pub demo: DemoConfig,
     pub batch: Arc<Mutex<BatchState>>,
+    pub mode: MatchingMode,
 }
 
 pub fn router(state: AppState) -> Router {
@@ -136,21 +139,28 @@ struct Accepted {
     status: String,
 }
 
+/// Turn a rejection into a counted HTTP response, the single place that shape lives.
+fn rejected(reason: RejectReason) -> Response {
+    metrics::counter!("crossbook_orders_rejected_total", "reason" => reason.label()).increment(1);
+    let code = StatusCode::from_u16(reason.http_status()).unwrap_or(StatusCode::BAD_REQUEST);
+    (
+        code,
+        Json(json!({ "error": reason.to_string(), "reason": reason.label() })),
+    )
+        .into_response()
+}
+
 async fn post_order(State(st): State<AppState>, Json(payload): Json<OrderPayload>) -> Response {
+    // A uniform price batch clears in whole lots, so it cannot honor a fill or
+    // kill order's exact amount. Reject it up front in batch mode.
+    if st.mode == MatchingMode::Batch && !payload.partially_fillable {
+        return rejected(RejectReason::FillOrKillNotInBatch);
+    }
+
     let seq = st.seq.fetch_add(1, Ordering::Relaxed);
     let validated = match ingest::validate(&payload, &st.chain, &st.domain, now_secs(), seq).await {
         Ok(v) => v,
-        Err(reason) => {
-            metrics::counter!("crossbook_orders_rejected_total", "reason" => reason.label())
-                .increment(1);
-            let code =
-                StatusCode::from_u16(reason.http_status()).unwrap_or(StatusCode::BAD_REQUEST);
-            return (
-                code,
-                Json(json!({ "error": reason.to_string(), "reason": reason.label() })),
-            )
-                .into_response();
-        }
+        Err(reason) => return rejected(reason),
     };
     metrics::counter!("crossbook_orders_admitted_total").increment(1);
 

@@ -113,6 +113,23 @@ fn sizes_orders_by_remaining_quantity() {
     assert_eq!((r.clearing_num, r.clearing_den), (u(19), u(10)));
 }
 
+#[test]
+fn fill_or_kill_orders_do_not_participate_in_the_batch() {
+    // A fill or kill ask cannot be cleared in whole lots to its exact amount, so
+    // the core skips it; with no other ask, nothing clears.
+    let mut fok_ask = ord(0, 1, A, 100, B, 100);
+    fok_ask.order.partially_fillable = false;
+    let bid = ord(1, 2, B, 100, A, 100);
+    assert!(run_auction(&[fok_ask, bid]).is_empty());
+
+    // A partially fillable ask on the same pair clears normally.
+    let pf_ask = ord(2, 3, A, 100, B, 100);
+    let bid2 = ord(3, 4, B, 100, A, 100);
+    let r = run_auction(&[pf_ask, bid2]);
+    assert_eq!(r.len(), 1);
+    assert_eq!(r[0].volume_base, u(100));
+}
+
 /// Quote-unit surplus of one order given its cumulative fill, base token = A.
 /// Asks (sell A) measure how much more quote they got than their minimum; bids
 /// (sell B) measure how much less quote they paid than their maximum.

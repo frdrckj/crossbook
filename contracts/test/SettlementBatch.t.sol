@@ -155,6 +155,46 @@ contract SettlementBatchTest is Test {
         settlement.settleBatch(orders, fills, prices);
     }
 
+    function test_RevertWhen_EmptyBatch() public {
+        (SignedOrder[] memory orders,, ClearingPrice[] memory prices) = uniformBatch(100e18, 3, 2);
+        Fill[] memory empty = new Fill[](0);
+        vm.prank(solver);
+        vm.expectRevert(CrossbookSettlement.EmptyBatch.selector);
+        settlement.settleBatch(orders, empty, prices);
+    }
+
+    function test_RevertWhen_DegenerateClearingPrice() public {
+        (SignedOrder[] memory orders, Fill[] memory fills, ClearingPrice[] memory prices) =
+            uniformBatch(100e18, 3, 2);
+        prices[0].den = 0; // not a valid price
+        vm.prank(solver);
+        vm.expectRevert(CrossbookSettlement.InvalidClearingPrice.selector);
+        settlement.settleBatch(orders, fills, prices);
+    }
+
+    function test_RevertWhen_DuplicateClearingPrice() public {
+        (SignedOrder[] memory orders, Fill[] memory fills, ClearingPrice[] memory prices) =
+            uniformBatch(100e18, 3, 2);
+        ClearingPrice[] memory dup = new ClearingPrice[](2);
+        dup[0] = prices[0];
+        dup[1] = prices[0]; // same pair twice
+        vm.prank(solver);
+        vm.expectRevert(CrossbookSettlement.DuplicateClearingPrice.selector);
+        settlement.settleBatch(orders, fills, dup);
+    }
+
+    function test_RevertWhen_StaleClearingPrice() public {
+        (SignedOrder[] memory orders, Fill[] memory fills, ClearingPrice[] memory prices) =
+            uniformBatch(100e18, 3, 2);
+        ClearingPrice[] memory extra = new ClearingPrice[](2);
+        extra[0] = prices[0];
+        // A price for a pair no fill references: it cleared no volume.
+        extra[1] = ClearingPrice({base: address(0x1111), quote: address(0x2222), num: 1, den: 1});
+        vm.prank(solver);
+        vm.expectRevert(CrossbookSettlement.UnusedClearingPrice.selector);
+        settlement.settleBatch(orders, fills, extra);
+    }
+
     function test_RevertWhen_BatchOrderExpired() public {
         (SignedOrder[] memory orders, Fill[] memory fills, ClearingPrice[] memory prices) =
             uniformBatch(100e18, 3, 2);

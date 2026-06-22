@@ -16,13 +16,16 @@ struct Spec {
     sell_a: bool,
     sell: u64,
     buy: u64,
+    fillable: bool,
 }
 
 fn spec() -> impl Strategy<Value = Spec> {
-    (any::<bool>(), 1u64..2000, 1u64..2000).prop_map(|(d, s, b)| Spec {
+    // Mostly partially fillable, with a fill or kill minority to exercise the skip.
+    (any::<bool>(), 1u64..2000, 1u64..2000, 0u8..4).prop_map(|(d, s, b, f)| Spec {
         sell_a: d,
         sell: s,
         buy: b,
+        fillable: f != 0,
     })
 }
 
@@ -42,7 +45,7 @@ fn build(specs: &[Spec]) -> (Vec<OpenOrder>, HashMap<[u8; 32], Order>) {
             buy_amount: U256::from(s.buy),
             valid_to: u64::MAX,
             nonce: U256::from(i as u64),
-            partially_fillable: true,
+            partially_fillable: s.fillable,
         };
         orders.push(OpenOrder::new(o.clone(), h, i as u64).unwrap());
         map.insert(h, o);
@@ -77,6 +80,8 @@ proptest! {
                 let o = &map[&f.order_hash];
                 prop_assert!(!f.sell_filled.is_zero());
                 prop_assert!(!f.buy_filled.is_zero());
+                // (f) fill or kill orders never appear in a batch fill at all.
+                prop_assert!(o.partially_fillable, "fill or kill order was matched in a batch");
 
                 if o.sell_token == base {
                     // ask: sold base, received quote
@@ -117,9 +122,13 @@ proptest! {
             prop_assert_eq!(bid_filled, r.volume_base);
 
             // (d) maximal volume: the binding side is fully consumed and the
-            // matched volume is the min of the two eligible sides.
+            // matched volume is the min of the two eligible sides. Fill or kill
+            // orders do not participate, so they are excluded here too.
             let (mut ask_avail, mut bid_avail) = (U256::ZERO, U256::ZERO);
             for o in map.values() {
+                if !o.partially_fillable {
+                    continue;
+                }
                 if o.sell_token == base {
                     if cmp_limit(o.buy_amount, o.sell_amount, r.clearing_num, r.clearing_den)
                         != Ordering::Greater

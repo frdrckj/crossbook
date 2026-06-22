@@ -83,6 +83,13 @@ pub fn run_auction(orders: &[OpenOrder]) -> Vec<AuctionResult> {
     let mut pairs: BTreeMap<(Address, Address), (Vec<Side>, Vec<Side>)> = BTreeMap::new();
 
     for o in orders {
+        // The batch clears in whole lots of the clearing price, so it can only
+        // honor an exact fill or kill amount by accident. Fill or kill orders are
+        // rejected at intake in batch mode; the core skips them defensively so its
+        // output never asks the contract to partially fill one.
+        if !o.order.partially_fillable {
+            continue;
+        }
         // Size each order by its unfilled quantity, so a remainder left from a
         // previous window rolls in at the right size. For a fresh order this is
         // the full sell amount.
@@ -159,10 +166,15 @@ fn clear_pair(
     .unwrap_or_else(|| price::reduce(asks[mi].limit_num, asks[mi].limit_den));
     let c = Clearing { pn, pd, lot: pd };
 
-    // Eligible volume per side at p*, floored to whole lots.
+    // Cap the matched base so the quote leg `base / lot * pn` can never exceed 256
+    // bits: the largest base whose quote fits is floor(MAX / pn) lots. Both sides
+    // share the cap, so the pair still nets to zero.
+    let quote_cap = (U256::MAX / c.pn) * c.lot;
+
+    // Eligible base per side at p*, floored to whole lots, then capped.
     let ask_avail = eligible_lots(asks, &c, true);
     let bid_avail = eligible_lots(bids, &c, false);
-    let qstar = ask_avail.min(bid_avail);
+    let qstar = ask_avail.min(bid_avail).min(quote_cap);
     if qstar.is_zero() {
         return None;
     }
@@ -231,7 +243,8 @@ fn eligible(s: &Side, pn: U256, pd: U256, is_ask: bool) -> bool {
     }
 }
 
-/// Total eligible base, floored to whole lots, saturating on absurd totals.
+/// Total eligible base, floored to whole lots, saturating on absurd totals. This
+/// is the divisible upper bound; fill or kill is reconciled separately.
 fn eligible_lots(side: &[Side], c: &Clearing, is_ask: bool) -> U256 {
     let mut total = U256::ZERO;
     for s in side {

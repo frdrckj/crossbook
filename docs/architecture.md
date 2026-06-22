@@ -46,7 +46,9 @@ For each filled order the auction measures the price improvement over its own li
 
 ### Enforced on chain, not trusted
 
-Settlement adds a `settleBatch` entrypoint beside `settle`. It shares the same internal verification, signatures, nonce, expiry, the cumulative fill bound, each maker's limit, and the net zero check, and then adds one more: every fill in a pair must execute at exactly that pair's clearing price, checked as an exact 512 bit ratio. It emits a `BatchSettled` event per pair carrying the clearing price and the matched volume. So the auction's defining property, one price per pair, is verified by the contract rather than taken on faith from the solver, the same posture as the rest of the system.
+Settlement adds a `settleBatch` entrypoint beside `settle`. It shares the same internal verification, signatures, nonce, expiry, the cumulative fill bound, each maker's limit, and the net zero check, and then adds one more: every fill in a pair must execute at exactly that pair's clearing price, checked as an exact 512 bit ratio. It also rejects an empty batch, a non positive price, a duplicate price for a pair, and a price that cleared no volume, so the `BatchSettled` stream it emits per pair (carrying the clearing price and matched volume) is well formed.
+
+It is worth being precise about what this does and does not guarantee. The chain enforces two things for a batch: one uniform price per pair, and each maker's own signed limit. Together these mean every fill in a pair trades at the same price and no maker is ever filled below its limit, even against a malicious solver. What the chain does not enforce is that the chosen price is the midpoint, or central, or that the batch cleared the maximal crossable volume. Those are properties of the off chain auction in `auction.rs`: the contract pins the price to be uniform and within limits, the matcher chooses which uniform price (the midpoint) and how much to clear. A maker is therefore protected to its limit on chain and protected to a fair midpoint by the matcher. The honest framing is uniform price plus limits on chain, fair price off chain.
 
 ### How it runs in the engine
 

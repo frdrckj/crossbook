@@ -42,6 +42,10 @@ contract CrossbookSettlement is ISettlement, EIP712, ReentrancyGuard, Ownable, P
     error NotMaker();
     error ClearingPriceMissing();
     error UniformPriceViolated();
+    error EmptyBatch();
+    error InvalidClearingPrice();
+    error DuplicateClearingPrice();
+    error UnusedClearingPrice();
 
     modifier onlySolver() {
         if (msg.sender != solver) revert NotSolver();
@@ -94,14 +98,38 @@ contract CrossbookSettlement is ISettlement, EIP712, ReentrancyGuard, Ownable, P
         Fill[] calldata fills,
         ClearingPrice[] calldata prices
     ) external onlySolver whenNotPaused nonReentrant {
+        if (fills.length == 0) revert EmptyBatch();
+
+        // The price set must be well formed: each price positive, and at most one
+        // entry per token pair, so the BatchSettled stream cannot carry a second,
+        // unenforced price for a pair.
+        for (uint256 k = 0; k < prices.length; k++) {
+            ClearingPrice calldata p = prices[k];
+            if (p.num == 0 || p.den == 0) revert InvalidClearingPrice();
+            for (uint256 m = 0; m < k; m++) {
+                ClearingPrice calldata q = prices[m];
+                if (
+                    (p.base == q.base && p.quote == q.quote)
+                        || (p.base == q.quote && p.quote == q.base)
+                ) {
+                    revert DuplicateClearingPrice();
+                }
+            }
+        }
+
         // Enforce the uniform price before moving any funds: every fill in a pair
         // must trade at exactly that pair's clearing price. This is what makes the
         // batch a real call auction rather than a relabelled continuous settle.
         _assertUniformPrice(orders, fills, prices);
         _settle(orders, fills);
+
+        // Emit one event per pair. Every supplied price must have cleared volume,
+        // so a stale or unmatched price entry reverts rather than emitting noise.
         for (uint256 k = 0; k < prices.length; k++) {
             ClearingPrice calldata p = prices[k];
-            emit BatchSettled(p.base, p.quote, p.num, p.den, _volumeBase(p, orders, fills));
+            uint256 vol = _volumeBase(p, orders, fills);
+            if (vol == 0) revert UnusedClearingPrice();
+            emit BatchSettled(p.base, p.quote, p.num, p.den, vol);
         }
     }
 
