@@ -73,6 +73,8 @@ enum Cmd {
         #[arg(long)]
         quote: Address,
     },
+    /// Show the current batch window and the last clearing price per pair.
+    Batch,
     /// Show recent trades for a token pair.
     Trades {
         #[arg(long)]
@@ -123,6 +125,9 @@ async fn main() -> Result<()> {
     match cli.cmd {
         Cmd::Book { base, quote } => {
             get_json(&http, format!("{}/book/{base}/{quote}", cli.engine)).await?;
+        }
+        Cmd::Batch => {
+            get_json(&http, format!("{}/batch", cli.engine)).await?;
         }
         Cmd::Trades { base, quote, limit } => {
             get_json(

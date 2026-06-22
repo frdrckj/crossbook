@@ -96,6 +96,16 @@
       .log .err { color: var(--give); }
 
       .notice { border: 1px solid var(--give); color: var(--give); padding: 11px 14px; margin: 18px 0; font-size: 12.5px; }
+
+      /* batch auction panel */
+      .batch { margin: 0 0 28px; border: 1.5px solid var(--ink); background: var(--card); padding: 14px 16px; }
+      .batch .sec { border: 0; padding: 0 0 10px; }
+      .batch-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; padding: 2px 0 12px; border-bottom: 1px solid var(--rule); margin-bottom: 4px; }
+      .stat .k { color: var(--muted); font-size: 11px; }
+      .stat .v { font-family: var(--disp); font-weight: 600; font-size: 21px; }
+      .batch td:nth-child(2) { color: var(--recv); font-weight: 500; }
+      @media (max-width: 820px) { .batch-row { grid-template-columns: 1fr 1fr; } }
+
       footer { margin-top: 30px; padding-top: 14px; border-top: 1px solid var(--rule); color: var(--muted); font-size: 11.5px; }
     </style>
   </head>
@@ -120,6 +130,20 @@
         <div class="step" data-k="settle"><div class="num">3</div><div class="name">Settle</div><div class="desc">The contract verifies and swaps atomically.</div></div>
         <div class="step" data-k="index"><div class="num">4</div><div class="name">Index</div><div class="desc">Trade events are read into Postgres.</div></div>
         <div class="step" data-k="feed"><div class="num">5</div><div class="name">Feed</div><div class="desc">Subscribers see the fill at once.</div></div>
+      </section>
+
+      <section class="batch" id="batch-panel" style="display: none">
+        <div class="sec">Batch auction <span class="meta" id="batch-meta"></span></div>
+        <div class="batch-row">
+          <div class="stat"><div class="k">window closes in</div><div class="v" id="batch-countdown">—</div></div>
+          <div class="stat"><div class="k">orders collected</div><div class="v" id="batch-collected">0</div></div>
+          <div class="stat"><div class="k">window length</div><div class="v" id="batch-interval">—</div></div>
+        </div>
+        <table>
+          <thead><tr><th>pair</th><th>clearing price</th><th>volume (base)</th><th>surplus (quote)</th></tr></thead>
+          <tbody id="batch-clearings"></tbody>
+        </table>
+        <div class="empty" id="batch-empty">No batch has cleared yet.</div>
       </section>
 
       <div class="cols">
@@ -213,6 +237,35 @@
       function price(sell, buy) {
         const s = Number(sell), b = Number(buy);
         return s > 0 ? (b / s).toFixed(4) : "—";
+      }
+      function ratio(num, den) {
+        const n = Number(num), d = Number(den);
+        return d > 0 ? (n / d).toFixed(4) : "—";
+      }
+
+      let windowClosesAt = 0;
+      async function loadBatch() {
+        try {
+          const b = await (await fetch("/batch")).json();
+          if (b.mode !== "batch") { $("batch-panel").style.display = "none"; return; }
+          $("batch-panel").style.display = "block";
+          $("batch-meta").textContent = "uniform price call auction";
+          $("batch-interval").textContent = `${b.interval_secs}s`;
+          windowClosesAt = b.window_closes_at || 0;
+          $("batch-collected").textContent = $("asks").children.length + $("bids").children.length;
+          const rows = b.last_results || [];
+          $("batch-clearings").innerHTML = rows.map((r) =>
+            `<tr><td>${short(r.base)} / ${short(r.quote)}</td><td>${ratio(r.clearing_num, r.clearing_den)}</td><td>${r.volume_base}</td><td>${r.surplus}</td></tr>`).join("");
+          $("batch-empty").style.display = rows.length ? "none" : "block";
+          // In batch mode the Match step is really the window clearing.
+          const m = document.querySelector('.step[data-k="match"] .desc');
+          if (m) m.textContent = "The window closes and the batch clears at one price.";
+        } catch (e) { /* engine momentarily unavailable */ }
+      }
+      function tickCountdown() {
+        if (!windowClosesAt) { $("batch-countdown").textContent = "—"; return; }
+        const left = Math.max(0, windowClosesAt - Math.floor(Date.now() / 1000));
+        $("batch-countdown").textContent = `${left}s`;
       }
 
       function refreshIntent() {
@@ -323,7 +376,10 @@
       refreshIntent();
       openFeed();
       loadBook();
+      loadBatch();
       setInterval(loadBook, 1500);
+      setInterval(loadBatch, 1500);
+      setInterval(tickCountdown, 1000);
     </script>
   </body>
 </html>
