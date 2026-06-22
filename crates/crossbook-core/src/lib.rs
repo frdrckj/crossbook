@@ -5,6 +5,7 @@
 //! hot path fast and the engine easy to test with golden replays and property
 //! tests.
 
+pub mod auction;
 pub mod book;
 pub mod eip712;
 pub mod error;
